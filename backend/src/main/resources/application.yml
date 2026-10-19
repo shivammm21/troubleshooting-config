@@ -1,0 +1,38 @@
+# StackPilot backend configuration
+# Loopback API for Docker, project indexing, and diagnostics.
+
+server:
+  # Bind ONLY to the loopback interface – never expose this to the network.
+  address: 127.0.0.1
+  # Port 0 tells Spring Boot to pick an available ephemeral port.
+  # The desktop module reads the actual port after startup via
+  # ServletWebServerApplicationContext.getWebServer().getPort().
+  port: 0
+  # Allow the graceful shutdown period to drain in-flight requests.
+  shutdown: graceful
+
+spring:
+  application:
+    name: stackpilot-backend
+  lifecycle:
+    timeout-per-shutdown-phase: 10s
+  # Disable cloud-config, data, and other auto-configurations not needed yet.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    root: INFO
+    com.stackpilot: DEBUG

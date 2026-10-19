@@ -1,0 +1,13 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    image: eclipse-temurin:21-jre
+    depends_on:
+      - redis
+    environment:
+      SPRING_DATA_REDIS_HOST: localhost
+      SPRING_DATA_REDIS_PORT: "6379"

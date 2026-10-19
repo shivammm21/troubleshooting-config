@@ -1,0 +1,90 @@
+/**
+ * Desktop module – Kotlin Compose Multiplatform Desktop application.
+ *
+ * This module owns the JVM process entry point (Main.kt) and uses the
+ * backend module as a regular library dependency. It starts the Spring Boot
+ * context programmatically (BackendLifecycle.kt) inside the same JVM, then
+ * builds the Compose UI against the running backend.
+ */
+
+plugins {
+    kotlin("jvm") version "2.0.21"
+    id("org.jetbrains.compose") version "1.7.3"
+    kotlin("plugin.compose") version "2.0.21"
+    id("io.spring.dependency-management") version "1.1.6"
+}
+
+// Import Spring Boot BOM so version numbers stay in sync with the backend.
+dependencyManagement {
+    imports {
+        mavenBom("org.springframework.boot:spring-boot-dependencies:3.3.5")
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+dependencies {
+    // Compose Multiplatform Desktop runtime.
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
+
+    // Kotlinx coroutines for off-thread backend startup and HTTP polling.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
+
+    // Backend module – consumed as a regular JVM library, not a fat jar.
+    implementation(project(":backend"))
+
+    // Spring Boot starters needed at runtime when the desktop starts the backend.
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+
+    // Ktor Client for the desktop to call the local backend HTTP API.
+    val ktorVersion = "2.3.12"
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
+    implementation("io.ktor:ktor-client-cio:$ktorVersion")
+    implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
+
+    // Kotlin serialisation.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+
+    // ---- Test dependencies ------------------------------------------------
+    testImplementation(kotlin("test"))
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.stackpilot.desktop.MainKt"
+
+        nativeDistributions {
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
+            )
+            packageName = "StackPilot"
+            packageVersion = "1.0.0"
+            description = "Documentation-Aware DevOps Troubleshooting Tool"
+            vendor = "StackPilot"
+
+            windows {
+                menuGroup = "StackPilot"
+                upgradeUuid = "f3b6a2e4-1c9d-4e7a-b234-5d8f0e1a7c3b"
+            }
+        }
+
+        // Bump the JVM heap for the combined desktop+backend process.
+        jvmArgs("-Xmx512m", "-Xms128m")
+    }
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
