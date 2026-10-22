@@ -37,15 +37,20 @@ public class DiagnosticEngine {
         }
         DockerModels.Status status = docker.status();
         List<DockerModels.ContainerSummary> containers = status.connected() ? docker.listContainers() : List.of();
-        // Key by "name (id[:12])" so diagnostic rules can cite a human-readable location
-        // in Evidence items while still being able to look up logs by identity.
+        // Build the logs map with TWO keys per container so that:
+        //   - Old rules that look up by container.id() still find logs.
+        //   - Evidence items show a human-readable "name (shortId)" label.
+        // The readable label is inserted first so it is preferred when iterating;
+        // the raw ID entry is a fallback lookup alias.
         Map<String, String> logs = new LinkedHashMap<>();
         for (DockerModels.ContainerSummary container : containers) {
             String shortId = container.id().length() > 12 ? container.id().substring(0, 12) : container.id();
-            String key = container.name().isBlank()
+            String readableKey = container.name().isBlank()
                     ? shortId
                     : container.name() + " (" + shortId + ")";
-            logs.put(key, docker.tailLogs(container.id(), 150));
+            String logContent = docker.tailLogs(container.id(), 150);
+            logs.put(readableKey, logContent);   // human-readable key for evidence display
+            logs.put(container.id(), logContent); // raw-ID alias so existing rules still resolve
         }
         DiagnosticContext context = new DiagnosticContext(project, status, containers, logs);
         List<DiagnosticModels.Finding> findings = new ArrayList<>();

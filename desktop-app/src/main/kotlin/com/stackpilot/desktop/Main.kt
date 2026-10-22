@@ -3,16 +3,20 @@ package com.stackpilot.desktop
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.stackpilot.desktop.components.loadLogoBytes
 import com.stackpilot.desktop.screens.DashboardScreen
 import com.stackpilot.desktop.screens.StartupScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.jetbrains.skia.Image as SkiaImage
 import org.slf4j.LoggerFactory
 
 private val log = LoggerFactory.getLogger("com.stackpilot.desktop.Main")
@@ -75,12 +79,19 @@ fun main() = application {
 
     val windowState = rememberWindowState(width = 1380.dp, height = 880.dp)
 
+    // Load the window title-bar icon from the bundled resource.
+    // BitmapPainter wraps the decoded bitmap so Window.icon accepts it.
+    val windowIcon = remember {
+        try {
+            loadLogoBytes()
+                ?.let { SkiaImage.makeFromEncoded(it).toComposeImageBitmap() }
+                ?.let { BitmapPainter(it) }
+        } catch (_: Exception) { null }
+    }
+
     Window(
         onCloseRequest = {
-            // Transition to shutting-down state to suppress further UI actions.
             appState = AppState.ShuttingDown
-
-            // Stop the backend on a background coroutine, then exit the process.
             appScope.launch(Dispatchers.IO) {
                 log.info("Window closing – stopping backend…")
                 backend.stop()
@@ -89,7 +100,8 @@ fun main() = application {
             }
         },
         state = windowState,
-        title = "StackPilot"
+        title = "StackPilot",
+        icon = windowIcon
     ) {
         com.stackpilot.desktop.theme.StackPilotTheme {
             when (val state = appState) {

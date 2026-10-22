@@ -45,19 +45,30 @@ fun Sidebar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(AppColors.PrimaryBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.NearMe,
-                        contentDescription = "StackPilot Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                // Show the real PNG logo; fall back to the icon if the resource
+                // is missing (e.g. during a run before assets are bundled).
+                val logoBitmap = rememberLogoBitmap()
+                if (logoBitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = logoBitmap,
+                        contentDescription = "StackPilot logo",
+                        modifier = Modifier.size(36.dp)
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(AppColors.PrimaryBlue),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.NearMe,
+                            contentDescription = "StackPilot Logo",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
                 Column {

@@ -14,17 +14,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.stackpilot.desktop.components.LogoImageBlack
 
 /**
  * Startup / loading screen shown while the Spring Boot backend is initialising.
  *
- * Displays a spinner, the application name, and the current startup status
- * message.  The screen is purely declarative – all state is passed in from
- * the application root.
+ * Shows the black logo (suitable for the light background), a spinner while
+ * loading, or an error icon when startup fails.
  *
  * @param statusMessage Human-readable description of the current startup step.
- * @param isError       True if the startup has failed; switches the message to
- *                      an error colour and hides the spinner.
+ * @param isError       True if the startup has failed; shows an error icon
+ *                      instead of the spinner.
  */
 @Composable
 fun StartupScreen(
@@ -47,9 +47,12 @@ fun StartupScreen(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Application title
+            // ── Black logo image ──────────────────────────────────────────
+            LogoImageBlack(size = 72.dp)
+
+            // ── Application name ─────────────────────────────────────────
             Text(
                 text = "StackPilot",
                 fontSize = 32.sp,
@@ -58,15 +61,16 @@ fun StartupScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
+            // ── Tagline ───────────────────────────────────────────────────
             Text(
                 text = "Documentation-Aware DevOps Troubleshooting",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Spinner – only shown while loading, not on error.
+            // ── Spinner or error icon ─────────────────────────────────────
             if (!isError) {
                 CircularProgressIndicator(
                     modifier = Modifier
@@ -84,7 +88,7 @@ fun StartupScreen(
                 )
             }
 
-            // Status message
+            // ── Status message ────────────────────────────────────────────
             Text(
                 text = statusMessage,
                 fontSize = 13.sp,

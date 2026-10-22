@@ -36,6 +36,11 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.add("-parameters")
 }
 
+// Redirect build outputs to a path that won't conflict with IDE language-server
+// file locks on the default build/classes directory. This allows Gradle to
+// recompile cleanly even while the IDE has the project open.
+layout.buildDirectory.set(rootProject.layout.projectDirectory.dir("backend-build"))
+
 dependencies {
     // Core Spring Boot starters – brought in as a regular implementation dependency.
     implementation("org.springframework.boot:spring-boot-starter-web")
