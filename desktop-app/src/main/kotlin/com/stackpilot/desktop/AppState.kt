@@ -3,31 +3,44 @@ package com.stackpilot.desktop
 /**
  * Top-level application state machine.
  *
- * The UI root observes this state and renders the appropriate screen.
- * State transitions are driven by [BackendLifecycle] events on a coroutine.
+ * Flow:
+ *   CheckingSession → (session found) → Starting → Ready
+ *   CheckingSession → (no session)    → NeedsAuth
+ *   NeedsAuth       → (authenticated) → Starting → Ready
  */
 sealed class AppState {
 
-    /** Backend is starting; show the startup screen with the given message. */
+    /** Checking local disk for a saved auth session (instant). */
+    object CheckingSession : AppState()
+
+    /** No valid session — show the login / signup screen. */
+    object NeedsAuth : AppState()
+
+    /** Authenticated; backend is starting. */
     data class Starting(val message: String) : AppState()
 
     /**
      * Backend is ready; show the main dashboard.
-     *
-     * @param port    The local port the backend is listening on.
-     * @param baseUrl The base URL, e.g. "http://127.0.0.1:49312".
+     * @param port       Local port the backend is listening on.
+     * @param baseUrl    Full base URL, e.g. "http://127.0.0.1:49312".
+     * @param userName   Display name of the authenticated user.
+     * @param userEmail  Email of the authenticated user.
      */
-    data class Ready(val port: Int, val baseUrl: String, val sessionToken: String) : AppState()
+    data class Ready(
+        val port: Int,
+        val baseUrl: String,
+        val sessionToken: String,
+        val userName: String,
+        val userEmail: String,
+    ) : AppState()
 
     /**
-     * A fatal error occurred during startup.
-     * The startup screen switches to an error presentation.
-     *
-     * @param message Human-readable description of what went wrong.
-     * @param cause   The underlying exception, if available.
+     * Fatal startup error.
+     * @param message Human-readable description.
+     * @param cause   Underlying exception if available.
      */
     data class Error(val message: String, val cause: Throwable? = null) : AppState()
 
-    /** The application is shutting down; suppress further UI actions. */
+    /** Shutting down — suppress further UI actions. */
     object ShuttingDown : AppState()
 }

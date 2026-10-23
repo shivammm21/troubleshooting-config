@@ -2,34 +2,13 @@
 
 import React from "react";
 import Image from "next/image";
-import { Monitor, CheckCircle2 } from "lucide-react";
+import { Monitor } from "lucide-react";
 
 export function HeroToolDisplay() {
   return (
     <div className="w-full max-w-5xl flex flex-col items-center space-y-4">
       {/* Main Container Window */}
       <div className="w-full relative rounded-2xl border border-white/15 bg-[#080d17] shadow-2xl shadow-black/90 overflow-hidden terminal-glow group">
-        {/* Native macOS Window Header */}
-        <div className="px-4 py-3 bg-[#0a0f19] border-b border-white/10 flex items-center justify-between">
-          {/* macOS Window Controls */}
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#ff5f56] border border-[#e0443e]/50 hover:opacity-80 transition-opacity cursor-pointer" />
-            <div className="w-3 h-3 rounded-full bg-[#ffbd2e] border border-[#dea123]/50 hover:opacity-80 transition-opacity cursor-pointer" />
-            <div className="w-3 h-3 rounded-full bg-[#27c93f] border border-[#1aab29]/50 hover:opacity-80 transition-opacity cursor-pointer" />
-            <span className="ml-3 text-xs font-mono text-slate-400 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#00ffaa] animate-pulse" />
-              <span>StackPilot — Docker Environment Manager [macOS]</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/5 text-[#00ffaa] border border-[#00ffaa]/30 hidden sm:inline-flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" />
-              Live Product Screen
-            </span>
-            <span className="text-[11px] font-mono text-slate-500">v1.0.0</span>
-          </div>
-        </div>
 
         {/* Actual Tool Screenshot Display */}
         <div className="relative w-full aspect-[16/10] bg-[#070b14] overflow-hidden">

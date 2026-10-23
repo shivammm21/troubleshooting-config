@@ -9,13 +9,21 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/nodemailer": "^8.0.2",
     "@types/three": "^0.186.0",
+    "@types/uuid": "^10.0.0",
+    "bcryptjs": "^3.0.3",
     "framer-motion": "^14.6.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.61.0",
     "next": "16.4.2",
+    "nodemailer": "^10.2.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "uuid": "^14.0.3"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

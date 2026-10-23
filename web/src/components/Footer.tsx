@@ -35,92 +35,95 @@ export function Footer() {
             </p>
           </div>
 
-          {/* Product links */}
-          <div className="md:col-span-2 space-y-3">
-            <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-200">
-              Product
-            </h4>
-            <ul className="space-y-2 text-xs">
-              <li>
-                <a href="#features" className="hover:text-white transition-colors">
-                  Features
-                </a>
-              </li>
-              <li>
-                <a href="#tool-tour" className="hover:text-white transition-colors">
-                  Tool Tour
-                </a>
-              </li>
-              <li>
-                <a href="#faq" className="hover:text-white transition-colors">
-                  FAQ
-                </a>
-              </li>
-              <li>
-                <a
-                  href={SITE_CONFIG.release.notesUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-[#00ffaa] transition-colors font-medium"
-                >
-                  Download
-                </a>
-              </li>
-            </ul>
-          </div>
+          {/* Product + Resources — 2 col on mobile, split on desktop */}
+          <div className="md:col-span-5 grid grid-cols-2 gap-8">
+            {/* Product links */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-200">
+                Product
+              </h4>
+              <ul className="space-y-2 text-xs">
+                <li>
+                  <a href="#features" className="hover:text-white transition-colors">
+                    Features
+                  </a>
+                </li>
+                <li>
+                  <a href="#tool-tour" className="hover:text-white transition-colors">
+                    Tool Tour
+                  </a>
+                </li>
+                <li>
+                  <a href="#faq" className="hover:text-white transition-colors">
+                    FAQ
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={SITE_CONFIG.release.notesUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-[#00ffaa] transition-colors font-medium"
+                  >
+                    Download
+                  </a>
+                </li>
+              </ul>
+            </div>
 
-          {/* Resources & Open Source */}
-          <div className="md:col-span-3 space-y-3">
-            <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-200">
-              Resources
-            </h4>
-            <ul className="space-y-2 text-xs">
-              <li>
-                <a
-                  href={SITE_CONFIG.github.docsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-white transition-colors"
-                >
-                  Documentation
-                </a>
-              </li>
-              <li>
-                <a
-                  href={SITE_CONFIG.github.repoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-white transition-colors"
-                >
-                  GitHub Repository
-                </a>
-              </li>
-              <li>
-                <a
-                  href={SITE_CONFIG.github.issuesUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-white transition-colors"
-                >
-                  Report an Issue
-                </a>
-              </li>
-              <li>
-                <a
-                  href={SITE_CONFIG.github.contributingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-white transition-colors"
-                >
-                  Contributing
-                </a>
-              </li>
-              <li>
-                <a href="#faq" className="hover:text-white transition-colors">
-                  Frequently Asked Questions
-                </a>
-              </li>
-            </ul>
+            {/* Resources */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-200">
+                Resources
+              </h4>
+              <ul className="space-y-2 text-xs">
+                <li>
+                  <a
+                    href={SITE_CONFIG.github.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white transition-colors"
+                  >
+                    Documentation
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={SITE_CONFIG.github.repoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white transition-colors"
+                  >
+                    GitHub Repository
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={SITE_CONFIG.github.issuesUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white transition-colors"
+                  >
+                    Report an Issue
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={SITE_CONFIG.github.contributingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white transition-colors"
+                  >
+                    Contributing
+                  </a>
+                </li>
+                <li>
+                  <a href="#faq" className="hover:text-white transition-colors">
+                    Frequently Asked Questions
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
 
           {/* Back to top & channel status */}

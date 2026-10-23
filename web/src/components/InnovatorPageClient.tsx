@@ -8,8 +8,6 @@ import {
   Layers,
   Wrench,
   GitBranch,
-  Terminal,
-  ExternalLink,
   Sparkles,
   Heart,
 } from "lucide-react";
@@ -67,33 +65,25 @@ function TimelineItem({
   );
 }
 
-// ─── Social Link ──────────────────────────────────────────────────────────────
-function SocialLink({
+// ─── Social Icon ──────────────────────────────────────────────────────────────
+function SocialIcon({
   href,
   icon: Icon,
   label,
-  handle,
 }: {
   href: string;
   icon: React.ElementType;
   label: string;
-  handle: string;
 }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-3 px-5 py-3.5 rounded-xl bg-[#0b1120] border border-white/5 hover:border-[#00ffaa]/30 hover:bg-[#00ffaa]/5 transition-all group"
+      aria-label={label}
+      className="w-11 h-11 flex items-center justify-center rounded-full bg-[#0b1120] border border-white/10 text-slate-400 hover:text-[#00ffaa] hover:border-[#00ffaa]/40 hover:bg-[#00ffaa]/5 transition-all"
     >
-      <Icon className="w-5 h-5 text-slate-400 group-hover:text-[#00ffaa] transition-colors" />
-      <div>
-        <p className="text-xs text-slate-500">{label}</p>
-        <p className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors">
-          {handle}
-        </p>
-      </div>
-      <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-[#00ffaa] ml-auto transition-colors" />
+      <Icon className="w-5 h-5" />
     </a>
   );
 }
@@ -149,11 +139,11 @@ export function InnovatorPageClient() {
 
           {/* Avatar */}
           <div className="relative shrink-0 w-full md:w-auto flex justify-center md:block">
-            <div className="w-48 h-56 sm:w-56 sm:h-64 md:w-80 md:h-[420px] rounded-3xl border border-[#00ffaa]/20 shadow-2xl shadow-[#00ffaa]/10 overflow-hidden">
+            <div className="w-48 sm:w-56 md:w-80 rounded-3xl border border-[#00ffaa]/20 shadow-2xl shadow-[#00ffaa]/10 overflow-hidden">
               <img
                 src="/innovator.png"
                 alt="Shivam Thorat"
-                className="w-full h-full object-cover object-top"
+                className="w-full h-auto object-contain"
               />
             </div>
             {/* Online indicator */}
@@ -195,25 +185,22 @@ export function InnovatorPageClient() {
               I believe great developer tooling should remove friction, not add it.
             </p>
 
-            {/* Social links */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap items-center justify-center md:justify-start gap-3 pt-2 w-full">
-              <SocialLink
+            {/* Social icons */}
+            <div className="flex items-center justify-center md:justify-start gap-3 pt-2">
+              <SocialIcon
                 href="https://github.com/shivammm21"
                 icon={GithubIcon}
                 label="GitHub"
-                handle="@shivammm21"
               />
-              <SocialLink
+              <SocialIcon
                 href="https://linkedin.com/in/shivam-thorat"
                 icon={LinkedinIcon}
                 label="LinkedIn"
-                handle="Shivam Thorat"
               />
-              <SocialLink
+              <SocialIcon
                 href="mailto:shivamthorat2103@gmail.com"
                 icon={Mail}
                 label="Email"
-                handle="shivamthorat2103@gmail.com"
               />
             </div>
           </div>
