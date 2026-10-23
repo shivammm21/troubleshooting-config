@@ -3,38 +3,40 @@
 /**
  * /auth/callback
  *
- * Google redirects here after the user approves the OAuth consent screen.
- * URL will be: http://localhost:3000/auth/callback?code=...&state=...
+ * Google redirects here after OAuth consent. This page:
+ * 1. Reads ?code from the URL via useSearchParams (wrapped in Suspense).
+ * 2. Calls /api/auth/google-exchange → id_token.
+ * 3. Calls /api/auth/google → StackPilot JWT.
+ * 4. Redirects to http://localhost:9876/done?token=<JWT> for the desktop listener.
  *
- * This page:
- * 1. Reads the ?code param from the URL.
- * 2. Calls /api/auth/google-exchange to trade the code for an id_token.
- * 3. Calls /api/auth/google to verify the id_token and get a StackPilot JWT.
- * 4. Redirects to http://localhost:9876/done?token=<JWT> so the desktop app
- *    receives the token via its local HTTP listener.
+ * useSearchParams() requires a Suspense boundary in Next.js 15/16 when the
+ * page participates in static prerendering. We wrap the inner component in
+ * <Suspense> to satisfy that requirement.
  */
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type Status = "loading" | "success" | "error";
 
-export default function AuthCallbackPage() {
+// ── Inner component (uses useSearchParams — must be inside Suspense) ──────────
+
+function CallbackInner() {
   const params = useSearchParams();
   const [status, setStatus] = useState<Status>("loading");
   const [message, setMessage] = useState("Completing sign-in…");
 
   useEffect(() => {
-    const code = params.get("code");
+    const code  = params.get("code");
     const error = params.get("error");
 
     if (error || !code) {
       setStatus("error");
-      setMessage(error === "access_denied"
-        ? "Sign-in was cancelled. You can close this window."
-        : `Google returned an error: ${error ?? "missing code"}. Please try again.`
+      setMessage(
+        error === "access_denied"
+          ? "Sign-in was cancelled. You can close this window."
+          : `Google returned an error: ${error ?? "missing code"}. Please try again.`
       );
-      // Tell desktop the flow was cancelled
       fetch("http://localhost:9876/done?error=cancelled").catch(() => {});
       return;
     }
@@ -43,7 +45,7 @@ export default function AuthCallbackPage() {
 
     async function exchange() {
       try {
-        // Step 1: exchange auth code → id_token
+        // Step 1: auth code → id_token
         const exchangeRes = await fetch("/api/auth/google-exchange", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -54,7 +56,7 @@ export default function AuthCallbackPage() {
           throw new Error(exchangeData.error ?? "Code exchange failed");
         }
 
-        // Step 2: verify id_token → StackPilot JWT
+        // Step 2: id_token → StackPilot JWT
         const authRes = await fetch("/api/auth/google", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -65,16 +67,17 @@ export default function AuthCallbackPage() {
           throw new Error(authData.error ?? "Authentication failed");
         }
 
-        // Step 3: pass the JWT to the desktop app via local listener
-        const jwt = encodeURIComponent(authData.token);
-        const name = encodeURIComponent(authData.user?.name ?? "");
-        const email = encodeURIComponent(authData.user?.email ?? "");
-        const userId = encodeURIComponent(authData.user?.id ?? "");
+        // Step 3: send JWT to desktop local listener
+        const jwt    = encodeURIComponent(authData.token);
+        const name   = encodeURIComponent(authData.user?.name  ?? "");
+        const email  = encodeURIComponent(authData.user?.email ?? "");
+        const userId = encodeURIComponent(authData.user?.id    ?? "");
 
         setStatus("success");
-        setMessage(`Signed in as ${authData.user?.name ?? authData.user?.email}. You can close this window.`);
+        setMessage(
+          `Signed in as ${authData.user?.name ?? authData.user?.email}. You can close this window.`
+        );
 
-        // Redirect desktop listener
         window.location.href =
           `http://localhost:9876/done?token=${jwt}&name=${name}&email=${email}&userId=${userId}`;
       } catch (err: unknown) {
@@ -86,23 +89,27 @@ export default function AuthCallbackPage() {
     }
 
     exchange();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center"
-      style={{ background: "#070b12" }}>
-      <div className="max-w-md w-full mx-4 rounded-2xl border border-slate-700/50 p-10 text-center"
-        style={{ background: "#0d121f" }}>
-
-        {/* Logo / icon */}
-        <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-6"
-          style={{ background: "#1e3a5f" }}>
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: "#070b12" }}
+    >
+      <div
+        className="max-w-md w-full mx-4 rounded-2xl border border-slate-700/50 p-10 text-center"
+        style={{ background: "#0d121f" }}
+      >
+        {/* Status icon */}
+        <div
+          className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-6"
+          style={{ background: "#1e3a5f" }}
+        >
           {status === "loading" && (
             <svg className="w-7 h-7 animate-spin text-blue-400" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           )}
           {status === "success" && (
@@ -120,7 +127,7 @@ export default function AuthCallbackPage() {
         <h1 className="text-xl font-bold text-slate-100 mb-2">
           {status === "loading" && "Completing sign-in…"}
           {status === "success" && "Signed in successfully!"}
-          {status === "error" && "Sign-in failed"}
+          {status === "error"   && "Sign-in failed"}
         </h1>
 
         <p className="text-sm text-slate-400 leading-relaxed">{message}</p>
@@ -132,5 +139,36 @@ export default function AuthCallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ── Fallback shown while Suspense resolves ────────────────────────────────────
+
+function CallbackFallback() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: "#070b12" }}
+    >
+      <div
+        className="w-14 h-14 rounded-full flex items-center justify-center"
+        style={{ background: "#1e3a5f" }}
+      >
+        <svg className="w-7 h-7 animate-spin text-blue-400" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ── Page export (Suspense wrapper required for useSearchParams) ───────────────
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<CallbackFallback />}>
+      <CallbackInner />
+    </Suspense>
   );
 }
