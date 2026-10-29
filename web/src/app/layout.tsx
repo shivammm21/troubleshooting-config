@@ -4,6 +4,8 @@ import { SITE_CONFIG } from "@/config/site";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { MouseSpotlight } from "@/components/ui/MouseSpotlight";
+import { CustomCursor } from "@/components/ui/CustomCursor";
+import { SmoothScroll } from "@/components/ui/SmoothScroll";
 
 export const metadata: Metadata = {
   title: `${SITE_CONFIG.name} — ${SITE_CONFIG.tagline}`,
@@ -51,8 +53,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark scroll-smooth">
       <body className="min-h-screen bg-[#070b12] text-slate-200 antialiased selection:bg-[#00ffaa]/20 selection:text-[#00ffaa] flex flex-col overflow-x-hidden">
+        {/* Inertial wheel scrolling + gliding anchor links */}
+        <SmoothScroll />
+
         {/* Global mouse spotlight effect — runs on every page */}
         <MouseSpotlight />
+
+        {/* Circular cursor + red click ripple — desktop pointers only */}
+        <CustomCursor />
 
         {/* Sticky top navigation — visible on every page */}
         <Navbar />

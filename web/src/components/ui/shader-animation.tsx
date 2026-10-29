@@ -105,7 +105,8 @@ export function ShaderAnimation({
     scene.add(mesh)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    // 1.5x keeps the gradient sharp without paying for a full 2x buffer.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
 
     container.appendChild(renderer.domElement)
 
@@ -149,8 +150,11 @@ export function ShaderAnimation({
     window.addEventListener("touchmove", onPointerMove, { passive: true })
 
     // Animation loop with smooth mouse interpolation (lerp)
-    const animate = () => {
-      const animationId = requestAnimationFrame(animate)
+    let animationId = 0
+    let running = false
+
+    const frame = () => {
+      animationId = requestAnimationFrame(frame)
       uniforms.time.value += 0.05
 
       // Smooth lerp to mouse position
@@ -163,6 +167,38 @@ export function ShaderAnimation({
       }
     }
 
+    const start = () => {
+      if (running) return
+      running = true
+      animationId = requestAnimationFrame(frame)
+      if (sceneRef.current) sceneRef.current.animationId = animationId
+    }
+
+    const stop = () => {
+      running = false
+      cancelAnimationFrame(animationId)
+    }
+
+    // This full-screen shader is the most expensive thing on the page. Keep it
+    // idle while the hero is scrolled out of view or the tab is in the
+    // background, so scrolling the rest of the page keeps a full frame rate.
+    let inView = true
+    const sync = () => {
+      if (inView && !document.hidden) start()
+      else stop()
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        inView = entry.isIntersecting
+        sync()
+      },
+      { rootMargin: "120px" }
+    )
+    observer.observe(container)
+
+    document.addEventListener("visibilitychange", sync)
+
     // Store scene references for cleanup
     sceneRef.current = {
       camera,
@@ -173,13 +209,15 @@ export function ShaderAnimation({
       targetMouse,
     }
 
-    animate()
+    start()
 
     // Cleanup function
     return () => {
       window.removeEventListener("resize", onWindowResize)
       window.removeEventListener("mousemove", onPointerMove)
       window.removeEventListener("touchmove", onPointerMove)
+      document.removeEventListener("visibilitychange", sync)
+      observer.disconnect()
 
       if (sceneRef.current) {
         cancelAnimationFrame(sceneRef.current.animationId)
