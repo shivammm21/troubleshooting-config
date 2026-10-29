@@ -21,8 +21,10 @@ out/
 *.class
 
 # Logs
+# NB: anchor this to the repository root - a bare `logs/` also matches the
+# Java package directory backend/src/main/java/com/stackpilot/backend/logs.
 *.log
-logs/
+/logs/
 
 # OS
 .DS_Store
