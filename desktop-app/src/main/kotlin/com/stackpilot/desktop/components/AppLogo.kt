@@ -1,6 +1,8 @@
 package com.stackpilot.desktop.components
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -60,6 +62,25 @@ fun LogoImage(size: Dp = 32.dp, modifier: Modifier = Modifier) {
         bitmap = bitmap,
         contentDescription = "StackPilot logo",
         modifier = modifier.size(size)
+    )
+}
+
+/**
+ * White logo at its natural aspect ratio.
+ *
+ * [LogoImage] pins both axes to [size], which squashes a non-square mark. This
+ * variant takes the height and lets the width follow the PNG so the logo keeps
+ * the proportions the designer drew.
+ */
+@Composable
+fun BrandMark(height: Dp = 32.dp, modifier: Modifier = Modifier) {
+    val bitmap = rememberLogoBitmap() ?: return
+    Image(
+        bitmap = bitmap,
+        contentDescription = "StackPilot logo",
+        modifier = modifier
+            .height(height)
+            .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
     )
 }
 

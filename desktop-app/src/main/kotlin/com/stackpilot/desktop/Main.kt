@@ -132,6 +132,21 @@ fun main() = application {
                     backendPort  = state.port,
                     backendUrl   = state.baseUrl,
                     sessionToken = state.sessionToken,
+                    userName     = state.userName,
+                    userEmail    = state.userEmail,
+                    onLogout = {
+                        // Drop the saved session, shut the local backend down and
+                        // return to the auth screen. The UI state flips only after
+                        // the backend is gone so no request can race the shutdown.
+                        appScope.launch {
+                            withContext(Dispatchers.IO) {
+                                AuthSessionStore.clear()
+                                backend.stop()
+                            }
+                            authSession = null
+                            appState = AppState.NeedsAuth
+                        }
+                    }
                 )
             }
 

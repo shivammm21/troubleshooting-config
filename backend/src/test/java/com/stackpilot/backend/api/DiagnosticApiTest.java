@@ -128,7 +128,77 @@ class DiagnosticApiTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"findingId\":\"" + findingId + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.resolved").value(true))
-                .andExpect(jsonPath("$.summary", containsString("no longer detected")));
+                // Docker is mocked as unreachable in this test, so the config fix is
+                // confirmed while the runtime verdict stays pending (honest result).
+                .andExpect(jsonPath("$.resolved").value(false))
+                .andExpect(jsonPath("$.status").value("CONFIG_FIXED_RUNTIME_PENDING"))
+                .andExpect(jsonPath("$.summary", containsString("Docker is unreachable")));
+
+        // Rollback restores the original value and leaves the file clean.
+        mockMvc.perform(post("/api/diagnostics/" + runId + "/repair-rollback")
+                        .header("X-StackPilot-Token", tokens.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"findingId\":\"" + findingId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applied").value(true));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.readString(appYml).contains("host: localhost"));
+    }
+
+    @Test
+    void healthSnapshotAndHistoryAreServable() throws Exception {
+        mockMvc.perform(get("/api/infra/health")
+                        .header("X-StackPilot-Token", tokens.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.overall").value("DOWN"))
+                .andExpect(jsonPath("$.dockerConnected").value(false));
+
+        mockMvc.perform(get("/api/diagnostics?limit=5")
+                        .header("X-StackPilot-Token", tokens.token()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/verifications?limit=5")
+                        .header("X-StackPilot-Token", tokens.token()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void logAnalysisGroupsFailureSignatures() throws Exception {
+        when(docker.status()).thenReturn(new DockerModels.Status(true, "engine", 1, null));
+        when(docker.listContainers()).thenReturn(List.of(new DockerModels.ContainerSummary(
+                "abc123456789", "shop-api", "app:1", "running", "Up 2 minutes", List.of())));
+        when(docker.tailLogs("abc123456789", 300)).thenReturn("""
+                2026-10-29T10:00:01.123456789Z ERROR 1 --- [main] c.s.App : java.net.ConnectException: Connection refused
+                2026-10-29T10:00:02.123456789Z ERROR 1 --- [main] c.s.App : java.net.ConnectException: Connection refused
+                2026-10-29T10:00:03.123456789Z  INFO 1 --- [main] c.s.App : Started App
+                """);
+
+        mockMvc.perform(get("/api/containers/abc123456789/log-analysis")
+                        .header("X-StackPilot-Token", tokens.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.containerName").value("shop-api"))
+                .andExpect(jsonPath("$.summary.errorLines").value(2))
+                .andExpect(jsonPath("$.summary.signatures[0].category").value("CONNECTION"))
+                .andExpect(jsonPath("$.summary.signatures[0].count").value(2));
+    }
+
+    @Test
+    void reportRendersRootCauseAndVerificationSections() throws Exception {
+        MvcResult run = mockMvc.perform(post("/api/diagnostics")
+                        .header("X-StackPilot-Token", tokens.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String runId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(run.getResponse().getContentAsString())
+                .get("id").asText();
+
+        mockMvc.perform(get("/api/diagnostics/" + runId + "/report")
+                        .header("X-StackPilot-Token", tokens.token()))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .content().string(containsString("Root cause analysis")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .content().string(containsString("Post-fix verification")));
     }
 }

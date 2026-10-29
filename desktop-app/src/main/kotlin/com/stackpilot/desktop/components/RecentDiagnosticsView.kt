@@ -22,9 +22,9 @@ import com.stackpilot.desktop.theme.AppColors
 @Composable
 fun RecentDiagnosticsView(
     items: List<RecentDiagnosticItem>,
-    onViewAll: () -> Unit,
     onSelectItem: (RecentDiagnosticItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onViewAll: (() -> Unit)? = null
 ) {
     Surface(
         modifier = modifier
@@ -46,21 +46,23 @@ fun RecentDiagnosticsView(
                     color = AppColors.TextPrimary
                 )
 
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .border(1.dp, AppColors.CardBorder, RoundedCornerShape(6.dp))
-                        .background(Color(0xFF0F172A).copy(alpha = 0.6f))
-                        .clickable(onClick = onViewAll)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "View All",
-                        fontSize = 11.sp,
-                        color = AppColors.TextSecondary,
-                        fontWeight = FontWeight.Medium
-                    )
+                if (onViewAll != null) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(1.dp, AppColors.CardBorder, RoundedCornerShape(6.dp))
+                            .background(Color(0xFF0F172A).copy(alpha = 0.6f))
+                            .clickable(onClick = onViewAll)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "View All",
+                            fontSize = 11.sp,
+                            color = AppColors.TextSecondary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 

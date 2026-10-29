@@ -2,9 +2,12 @@ package com.stackpilot.backend.api;
 
 import com.stackpilot.backend.docker.DockerEngine;
 import com.stackpilot.backend.docker.model.DockerModels;
+import com.stackpilot.backend.logs.LogAnalyzer;
+import com.stackpilot.backend.logs.model.LogModels;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,10 +20,14 @@ import java.util.NoSuchElementException;
 @RequestMapping("/api")
 public class DockerController {
 
-    private final DockerEngine docker;
+    private static final int MAX_LOG_LINES = 2000;
 
-    public DockerController(DockerEngine docker) {
+    private final DockerEngine docker;
+    private final LogAnalyzer analyzer;
+
+    public DockerController(DockerEngine docker, LogAnalyzer analyzer) {
         this.docker = docker;
+        this.analyzer = analyzer;
     }
 
     @GetMapping("/docker/status")
@@ -38,34 +45,107 @@ public class DockerController {
             @PathVariable String id,
             @RequestParam(defaultValue = "200") int lines
     ) {
+        int limit = clampLines(lines);
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("Container id is required");
         }
-        if (lines < 1 || lines > 2000) {
-            throw new IllegalArgumentException("lines must be between 1 and 2000");
-        }
-        boolean known = !docker.status().connected() || docker.listContainers().stream().anyMatch(c ->
-                c.id().equalsIgnoreCase(id) ||
-                c.id().startsWith(id) ||
-                id.startsWith(c.id()) ||
-                c.name().equalsIgnoreCase(id) ||
-                c.name().equalsIgnoreCase(id.replaceFirst("^/", "")) ||
-                id.equalsIgnoreCase(c.name())
-        );
-        if (!known) {
-            try {
-                String directLogs = docker.tailLogs(id, lines);
-                if (directLogs != null && !directLogs.isBlank()) {
-                    return ResponseEntity.ok(Map.of("containerId", id, "logs", sanitise(directLogs)));
-                }
-            } catch (Exception ignored) {
-            }
-            throw new NoSuchElementException("Container not found: " + id);
-        }
         return ResponseEntity.ok(Map.of(
                 "containerId", id,
-                "logs", sanitise(docker.tailLogs(id, lines))
+                "logs", sanitise(readLogs(id, limit))
         ));
+    }
+
+    /**
+     * Feature 2 – Log Analysis and Error Detection.
+     *
+     * <p>Returns the raw tail plus the grouped failure signatures so the UI can
+     * show "12 x connection refused" instead of a wall of text.
+     */
+    @GetMapping("/containers/{id}/log-analysis")
+    public LogAnalysis analysis(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "300") int lines
+    ) {
+        int limit = clampLines(lines);
+        String target = resolveContainerId(id);
+        String clean = sanitise(docker.tailLogs(target, limit));
+        LogModels.Summary summary = analyzer.analyze(clean);
+        String name = docker.listContainers().stream()
+                .filter(c -> c.id().equals(target) || c.name().equalsIgnoreCase(target))
+                .map(DockerModels.ContainerSummary::name)
+                .findFirst()
+                .orElse(target);
+        return new LogAnalysis(target, name, limit, clean, summary);
+    }
+
+    /** Explicit, user-initiated container actions from the health panel. */
+    @PostMapping("/containers/{id}/restart")
+    public ActionResult restart(@PathVariable String id) {
+        String target = resolveContainerId(id);
+        boolean ok = docker.restart(target);
+        return new ActionResult(target, ok, ok
+                ? "Restart requested. Give the container a few seconds to become healthy."
+                : "Docker refused the restart. Check `docker ps -a` and the engine logs.");
+    }
+
+    @PostMapping("/containers/{id}/start")
+    public ActionResult start(@PathVariable String id) {
+        String target = resolveContainerId(id);
+        boolean ok = docker.start(target);
+        return new ActionResult(target, ok, ok
+                ? "Start requested."
+                : "Docker refused to start the container. Read its log for the cause.");
+    }
+
+    /** Log tail for a container id, short id or name; throws 404 when unknown. */
+    private String readLogs(String id, int lines) {
+        return docker.tailLogs(resolveContainerId(id), lines);
+    }
+
+    private String resolveContainerId(String id) {
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("Container id is required");
+        }
+        if (!docker.status().connected()) {
+            // Offline: hand the reference straight to the engine, which will fail
+            // with a clear error instead of pretending the container exists.
+            return id;
+        }
+        String plain = id.replaceFirst("^/", "");
+        return docker.listContainers().stream()
+                .filter(c -> c.id().equalsIgnoreCase(plain)
+                        || c.id().startsWith(plain)
+                        || plain.startsWith(c.id())
+                        || c.name().equalsIgnoreCase(plain)
+                        || c.name().replaceFirst("^/", "").equalsIgnoreCase(plain))
+                .map(DockerModels.ContainerSummary::id)
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("Container not found: " + id));
+    }
+
+    private static int clampLines(int lines) {
+        if (lines < 1) {
+            throw new IllegalArgumentException("lines must be at least 1");
+        }
+        return Math.min(lines, MAX_LOG_LINES);
+    }
+
+    /** Raw tail + analysed signatures for one container. */
+    public record LogAnalysis(
+            String containerId,
+            String containerName,
+            int requestedLines,
+            String raw,
+            LogModels.Summary summary
+    ) {
+        public LogAnalysis {
+            // Keeps the record immutable even if the analyser returns null.
+            raw = raw == null ? "" : raw;
+            summary = summary == null ? LogModels.Summary.empty() : summary;
+        }
+    }
+
+    public record ActionResult(String containerId, boolean ok, String message) {
     }
 
     /**

@@ -1,0 +1,134 @@
+name: Windows setup release
+
+# Builds the Windows installer and attaches it to the GitHub release for the
+# current app version. Triggers:
+#   * push to main            → publish/refresh the v<version> release
+#   * push of a v* tag        → same, and the tag must match the app version
+#   * manual workflow_dispatch
+#
+# The website links to
+#   .../releases/latest/download/StackPilot-Setup.exe
+# so every published release is picked up automatically without site changes.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Releases are serialised: two runs would otherwise upload to the same tag.
+  group: windows-setup-release
+  cancel-in-progress: false
+
+jobs:
+  build-windows-setup:
+    name: Build StackPilot setup.exe
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Validate version
+        id: version
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $gradleVersion = (Select-String -Path 'desktop-app\build.gradle.kts' `
+            -Pattern 'packageVersion\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          $setupVersion = (Select-String -Path 'installer\Setup.cs' `
+            -Pattern 'AppVersion\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+
+          if ($gradleVersion -ne $setupVersion) {
+            throw "Version mismatch: build.gradle.kts=$gradleVersion but Setup.cs=$setupVersion"
+          }
+
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $tagVersion = $env:GITHUB_REF.Substring('refs/tags/v'.Length)
+            if ($tagVersion -ne $gradleVersion) {
+              throw "Tag v$tagVersion does not match app version $gradleVersion. Bump packageVersion in desktop-app/build.gradle.kts and AppVersion in installer/Setup.cs, commit, then re-tag."
+            }
+          }
+
+          Write-Host "Building StackPilot $gradleVersion"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$gradleVersion" -Encoding ascii
+
+      - name: Build setup executable
+        shell: powershell
+        run: .\build-installer.ps1
+
+      - name: Prepare release assets
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $versioned = Get-ChildItem 'dist\StackPilot-Setup-*.exe' | Select-Object -First 1
+          if (-not $versioned) {
+            throw 'No setup executable was produced.'
+          }
+
+          # Stable file name used by the website download links.
+          Copy-Item $versioned.FullName 'dist\StackPilot-Setup.exe' -Force
+
+          $hash = (Get-FileHash 'dist\StackPilot-Setup.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  StackPilot-Setup.exe" | Set-Content 'dist\StackPilot-Setup.exe.sha256' -Encoding ascii
+
+          Get-ChildItem 'dist' | Select-Object Name, Length
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StackPilot-Setup-${{ steps.version.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Creates the tag on the default branch when it does not exist yet, so
+          # a plain push to main publishes the release for the current version.
+          tag_name: v${{ steps.version.outputs.version }}
+          name: StackPilot v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/StackPilot-Setup.exe
+            dist/StackPilot-Setup-${{ steps.version.outputs.version }}.exe
+            dist/StackPilot-Setup.exe.sha256
+
+      - name: Verify the link used by the website download button
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $url = 'https://github.com/shivammm21/troubleshooting-config/releases/latest/download/StackPilot-Setup.exe'
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            try {
+              $response = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -MaximumRedirection 5
+              Write-Host "Download link OK: HTTP $($response.StatusCode) from $url"
+              exit 0
+            }
+            catch {
+              Write-Host "Attempt $attempt failed: $($_.Exception.Message)"
+              if ($attempt -eq 6) {
+                throw "The website download link is not serving the installer yet: $url"
+              }
+              Start-Sleep -Seconds 10
+            }
+          }

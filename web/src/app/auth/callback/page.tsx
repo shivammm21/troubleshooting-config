@@ -7,7 +7,8 @@
  * 1. Reads ?code from the URL via useSearchParams (wrapped in Suspense).
  * 2. Calls /api/auth/google-exchange → id_token.
  * 3. Calls /api/auth/google → StackPilot JWT.
- * 4. Redirects to http://localhost:9876/done?token=<JWT> for the desktop listener.
+ * 4. Redirects to http://localhost:9876/done?token=<JWT>&state=<state>
+ *    for the desktop listener, which checks the state it generated.
  *
  * useSearchParams() requires a Suspense boundary in Next.js 15/16 when the
  * page participates in static prerendering. We wrap the inner component in
@@ -25,10 +26,17 @@ function CallbackInner() {
   const params = useSearchParams();
   const [status, setStatus] = useState<Status>("loading");
   const [message, setMessage] = useState("Completing sign-in…");
+  // True when the flow was started by the desktop app and this tab will hand
+  // the session over to it instead of ending here.
+  const [handoff, setHandoff] = useState(false);
 
   useEffect(() => {
     const code  = params.get("code");
     const error = params.get("error");
+    // Echoed back by Google from /api/auth/google/start - the desktop compares
+    // it with the value it generated before opening the browser.
+    const state = params.get("state") ?? "";
+    setHandoff(Boolean(state));
 
     if (error || !code) {
       setStatus("error");
@@ -37,11 +45,15 @@ function CallbackInner() {
           ? "Sign-in was cancelled. You can close this window."
           : `Google returned an error: ${error ?? "missing code"}. Please try again.`
       );
-      fetch("http://localhost:9876/done?error=cancelled").catch(() => {});
+      fetch(`http://localhost:9876/done?error=cancelled&state=${encodeURIComponent(state)}`).catch(() => {});
       return;
     }
 
-    const redirectUri = `${window.location.origin}/auth/callback`;
+    // Google requires the *same* redirect_uri at code exchange, so prefer the
+    // canonical site URL (must match Google Console) over whatever host this tab
+    // happened to be opened with (localhost vs 127.0.0.1, proxy domains, ...).
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/$/, "");
+    const redirectUri = `${siteUrl}/auth/callback`;
 
     async function exchange() {
       try {
@@ -75,16 +87,29 @@ function CallbackInner() {
 
         setStatus("success");
         setMessage(
-          `Signed in as ${authData.user?.name ?? authData.user?.email}. You can close this window.`
+          `Signed in as ${authData.user?.name ?? authData.user?.email}.`
         );
 
-        window.location.href =
-          `http://localhost:9876/done?token=${jwt}&name=${name}&email=${email}&userId=${userId}`;
+        // `state` is only present when the desktop app opened /signin or
+        // /signup. In that case hand the finished session to the app so it can
+        // continue on its own; a site-only visit just stays on this card.
+        if (state) {
+          setMessage(
+            `Signed in as ${authData.user?.name ?? authData.user?.email}. Returning to the StackPilot app…`
+          );
+          window.location.href =
+            `http://localhost:9876/done?token=${jwt}&name=${name}&email=${email}&userId=${userId}` +
+            `&state=${encodeURIComponent(state)}`;
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Unknown error";
         setStatus("error");
         setMessage(`Sign-in failed: ${msg}`);
-        fetch("http://localhost:9876/done?error=" + encodeURIComponent(msg)).catch(() => {});
+        fetch(
+          "http://localhost:9876/done?error=" +
+            encodeURIComponent(msg) +
+            `&state=${encodeURIComponent(state)}`
+        ).catch(() => {});
       }
     }
 
@@ -131,6 +156,15 @@ function CallbackInner() {
         </h1>
 
         <p className="text-sm text-slate-400 leading-relaxed">{message}</p>
+
+        {status === "success" && !handoff && (
+          <a
+            href="/download"
+            className="inline-flex items-center justify-center mt-6 h-10 px-5 rounded-lg bg-[#2563eb] hover:bg-[#3b82f6] text-sm font-medium text-white transition-colors"
+          >
+            Get the StackPilot app
+          </a>
+        )}
 
         {status !== "loading" && (
           <p className="text-xs text-slate-600 mt-6">

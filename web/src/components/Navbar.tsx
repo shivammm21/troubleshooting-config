@@ -7,6 +7,9 @@ import { usePathname } from "next/navigation";
 import { Download, Menu, X, ArrowUpRight, Sparkles } from "lucide-react";
 import { SITE_CONFIG } from "@/config/site";
 
+/** Pages that render without the marketing chrome. */
+const AUTH_ROUTES = ["/signin", "/signup", "/auth/callback"];
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -33,6 +36,10 @@ export function Navbar() {
 
   // Anchor links only work on the home page
   const isHome = pathname === "/";
+
+  // Auth screens stand on their own - they are opened by the desktop app and
+  // should not be wrapped in the marketing navigation.
+  if (AUTH_ROUTES.includes(pathname)) return null;
 
   const navLinks = [
     { name: "Features", href: isHome ? "#features" : "/#features" },

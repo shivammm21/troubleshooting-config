@@ -3,7 +3,11 @@
 build/
 */build/
 backend-build/
-desktop-app-build/
+desktop-build/
+
+# Installer build artefacts (the produced setup lives in dist/)
+dist/
+installer/obj/
 
 # IDE
 .idea/

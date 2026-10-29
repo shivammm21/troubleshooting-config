@@ -1,0 +1,25 @@
+{
+  "users": [
+    {
+      "id": "304e5a6b-e12a-4ccc-a3a8-a17ead8674ce",
+      "name": "Shivam Thorat",
+      "email": "shivamthorat00@gmail.com",
+      "passwordHash": "$2b$12$JxMNL0tUETKVWoRYUM4WXuyFfum4I7JYmRa10kTNS8ZU2mSjD8lKi",
+      "googleId": null,
+      "verified": true,
+      "createdAt": "2026-10-29T09:17:38.208Z"
+    }
+  ],
+  "otps": [
+    {
+      "email": "stackpilot-probe@example.com",
+      "otp": "204967",
+      "expiresAt": 1793265813080,
+      "pendingUser": {
+        "id": "571b9701-0c8f-4896-9233-93dc24587b3c",
+        "name": "Probe User",
+        "passwordHash": "$2b$12$anoxI4Zg9zEox7d7wvtNguRzNLv.7QEnb5sxsXAuedMJU0i5Ecyt2"
+      }
+    }
+  ]
+}

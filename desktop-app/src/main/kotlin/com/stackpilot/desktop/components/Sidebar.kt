@@ -97,6 +97,12 @@ fun Sidebar(
                     onClick = { onItemSelected(NavItem.Dashboard) }
                 )
                 NavItemRow(
+                    item = NavItem.Health,
+                    icon = Icons.Filled.MonitorHeart,
+                    isSelected = selectedItem == NavItem.Health,
+                    onClick = { onItemSelected(NavItem.Health) }
+                )
+                NavItemRow(
                     item = NavItem.Project,
                     icon = Icons.Filled.Folder,
                     isSelected = selectedItem == NavItem.Project,
@@ -125,6 +131,12 @@ fun Sidebar(
                     icon = Icons.Filled.Build,
                     isSelected = selectedItem == NavItem.Repairs,
                     onClick = { onItemSelected(NavItem.Repairs) }
+                )
+                NavItemRow(
+                    item = NavItem.History,
+                    icon = Icons.Filled.ManageHistory,
+                    isSelected = selectedItem == NavItem.History,
+                    onClick = { onItemSelected(NavItem.History) }
                 )
                 NavItemRow(
                     item = NavItem.Reports,

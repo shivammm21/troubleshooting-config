@@ -30,5 +30,7 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // preview-otp.mts is a local scratch script (it imports a .ts path directly),
+  // so keep it out of the type-check that `next build` runs.
+  "exclude": ["node_modules", "preview-otp.mts"]
 }

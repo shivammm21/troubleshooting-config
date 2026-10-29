@@ -3,11 +3,18 @@
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { BookOpen, Heart, ArrowUp } from "lucide-react";
 import { SITE_CONFIG } from "@/config/site";
 
+/** Pages that render without the marketing footer (they are opened by the app). */
+const AUTH_ROUTES = ["/signin", "/signup", "/auth/callback"];
+
 export function Footer() {
   const currentYear = 2026;
+  const pathname = usePathname();
+
+  if (AUTH_ROUTES.includes(pathname)) return null;
 
   return (
     <footer className="bg-[#05080f] border-t border-white/5 py-12 md:py-16 text-slate-400 text-xs sm:text-sm">

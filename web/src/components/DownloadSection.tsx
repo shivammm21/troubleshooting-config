@@ -5,7 +5,7 @@ import { Download, Terminal, Check, Copy, ExternalLink, ShieldAlert, Laptop, App
 import { SITE_CONFIG } from "@/config/site";
 
 export function DownloadSection() {
-  const [selectedOS, setSelectedOS] = useState<"linux" | "macos" | "windows">("linux");
+  const [selectedOS, setSelectedOS] = useState<"linux" | "macos" | "windows">("windows");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const release = SITE_CONFIG.release;
@@ -133,39 +133,23 @@ export function DownloadSection() {
             )}
           </div>
 
-          {/* CLI Quick Install Options */}
+          {/* Terminal download (same file as the button above) */}
           <div className="mt-8 space-y-3">
             <h5 className="text-xs font-mono uppercase tracking-wider text-slate-400">
-              Or install via terminal package manager
+              Or download from PowerShell
             </h5>
 
-            {/* Curl / Bash */}
             <div className="p-3 rounded-xl bg-[#080d15] border border-white/5 flex items-center justify-between text-xs font-mono">
               <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-none pr-2 text-slate-300">
-                <span className="text-[#00ffaa]">$</span>
-                <span>{SITE_CONFIG.quickInstall.curl}</span>
+                <span className="text-[#00ffaa]">&gt;</span>
+                <span>{SITE_CONFIG.quickInstall.powershell}</span>
               </div>
               <button
-                onClick={() => handleCopy(SITE_CONFIG.quickInstall.curl, "curl")}
+                onClick={() => handleCopy(SITE_CONFIG.quickInstall.powershell, "powershell")}
                 className="shrink-0 p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"
                 title="Copy command"
               >
-                {copiedKey === "curl" ? <Check className="w-4 h-4 text-[#00ffaa]" /> : <Copy className="w-4 h-4" />}
-              </button>
-            </div>
-
-            {/* Homebrew */}
-            <div className="p-3 rounded-xl bg-[#080d15] border border-white/5 flex items-center justify-between text-xs font-mono">
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-none pr-2 text-slate-300">
-                <span className="text-[#00ffaa]">$</span>
-                <span>{SITE_CONFIG.quickInstall.brew}</span>
-              </div>
-              <button
-                onClick={() => handleCopy(SITE_CONFIG.quickInstall.brew, "brew")}
-                className="shrink-0 p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white"
-                title="Copy command"
-              >
-                {copiedKey === "brew" ? <Check className="w-4 h-4 text-[#00ffaa]" /> : <Copy className="w-4 h-4" />}
+                {copiedKey === "powershell" ? <Check className="w-4 h-4 text-[#00ffaa]" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
           </div>

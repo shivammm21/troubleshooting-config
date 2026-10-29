@@ -9,12 +9,11 @@ import {
   Check,
   ExternalLink,
   Shield,
-  Terminal,
   Star,
   Package,
   ChevronRight,
 } from "lucide-react";
-import { SITE_CONFIG } from "@/config/site";
+import { SITE_CONFIG, WINDOWS_SETUP_URL, WINDOWS_CHECKSUM_URL } from "@/config/site";
 
 // ─── Copy Button ──────────────────────────────────────────────────────────────
 
@@ -36,6 +35,12 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+// ─── Download links ──────────────────────────────────────────────────────────
+
+// WINDOWS_SETUP_URL points at the release asset produced by
+// .github/workflows/release.yml (stable "latest/download" alias).
+const WINDOWS_CHECKSUM_COMMAND = "Get-FileHash .\\StackPilot-Setup.exe -Algorithm SHA256";
+
 // ─── Platform cards data ───────────────────────────────────────────────────────
 
 const platforms = [
@@ -51,15 +56,12 @@ const platforms = [
     accentColor: "#00ADEF",
     requirement: "Windows 10 version 2004+ · Docker Desktop 4.x · WSL 2",
     arch: "x86_64",
-    format: ".zip / .msi installer",
-    size: "44.6 MB",
-    downloadUrl:
-      "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-win-x64.zip",
-    installCmd: SITE_CONFIG.quickInstall.powershell,
-    installLabel: "PowerShell (auto-install)",
-    installShell: "ps",
+    format: ".exe installer",
+    size: "173.5 MB",
+    isReady: true,
+    downloadUrl: WINDOWS_SETUP_URL,
     extras: [
-      { label: ".zip archive", url: "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-win-x64.zip" },
+      { label: "SHA-256 checksum", url: WINDOWS_CHECKSUM_URL },
     ],
   },
   {
@@ -76,14 +78,9 @@ const platforms = [
     arch: "Universal (arm64 / x86_64)",
     format: ".dmg disk image",
     size: "48.1 MB",
-    downloadUrl:
-      "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-darwin-universal.dmg",
-    installCmd: SITE_CONFIG.quickInstall.brew,
-    installLabel: "Homebrew (recommended)",
-    installShell: "sh",
-    extras: [
-      { label: ".dmg disk image", url: "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-darwin-universal.dmg" },
-    ],
+    isReady: false,
+    downloadUrl: SITE_CONFIG.release.notesUrl,
+    extras: [],
   },
   {
     os: "linux",
@@ -99,14 +96,9 @@ const platforms = [
     arch: "x86_64",
     format: ".tar.gz / AppImage",
     size: "42.8 MB",
-    downloadUrl:
-      "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-linux-x64.tar.gz",
-    installCmd: SITE_CONFIG.quickInstall.curl,
-    installLabel: "curl install script",
-    installShell: "sh",
-    extras: [
-      { label: ".tar.gz archive", url: "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-linux-x64.tar.gz" },
-    ],
+    isReady: false,
+    downloadUrl: SITE_CONFIG.release.notesUrl,
+    extras: [],
   },
 ];
 
@@ -139,6 +131,11 @@ function PlatformCard({ p }: { p: (typeof platforms)[number] }) {
           <div>
             <h2 className="text-2xl font-extrabold text-white">{p.name}</h2>
             <p className="text-sm text-slate-400 mt-0.5">{p.subtitle}</p>
+            {!p.isReady && (
+              <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-slate-400">
+                Coming soon
+              </span>
+            )}
           </div>
         </div>
 
@@ -163,54 +160,53 @@ function PlatformCard({ p }: { p: (typeof platforms)[number] }) {
           <span>{p.requirement}</span>
         </div>
 
-        {/* Quick install */}
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500 font-mono uppercase tracking-widest">{p.installLabel}</p>
-          <div className="flex items-center gap-2 bg-[#060a12] rounded-xl px-4 py-3 border border-white/5 font-mono text-xs text-slate-300 min-w-0">
-            <Terminal className="w-3.5 h-3.5 shrink-0 text-slate-500" />
-            <span className="truncate flex-1">{p.installCmd}</span>
-            <CopyButton text={p.installCmd} />
-          </div>
-        </div>
-
         {/* Spacer */}
         <div className="flex-1" />
 
         {/* Primary download */}
-        <a
-          href={p.downloadUrl}
-          className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 active:scale-95"
-          style={{
-            background: `linear-gradient(135deg, ${p.accentColor}22, ${p.accentColor}11)`,
-            border: `1.5px solid ${p.accentColor}55`,
-            color: p.accentColor,
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.background = `${p.accentColor}22`;
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = `${p.accentColor}99`;
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.background = `linear-gradient(135deg, ${p.accentColor}22, ${p.accentColor}11)`;
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = `${p.accentColor}55`;
-          }}
-        >
-          <Download className="w-4 h-4" />
-          Download for {p.name}
-        </a>
+        {p.isReady ? (
+          <a
+            href={p.downloadUrl}
+            className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 active:scale-95"
+            style={{
+              background: `linear-gradient(135deg, ${p.accentColor}22, ${p.accentColor}11)`,
+              border: `1.5px solid ${p.accentColor}55`,
+              color: p.accentColor,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.background = `${p.accentColor}22`;
+              (e.currentTarget as HTMLAnchorElement).style.borderColor = `${p.accentColor}99`;
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.background = `linear-gradient(135deg, ${p.accentColor}22, ${p.accentColor}11)`;
+              (e.currentTarget as HTMLAnchorElement).style.borderColor = `${p.accentColor}55`;
+            }}
+          >
+            <Download className="w-4 h-4" />
+            Download for {p.name}
+          </a>
+        ) : (
+          <span className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-xl font-bold text-sm bg-white/[0.03] border border-white/10 text-slate-500 cursor-not-allowed">
+            <Download className="w-4 h-4" />
+            Not available yet
+          </span>
+        )}
 
         {/* Alternate links */}
-        <div className="flex flex-wrap gap-2">
-          {p.extras.map((ex) => (
-            <a
-              key={ex.label}
-              href={ex.url}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/10"
-            >
-              <Package className="w-3 h-3" />
-              {ex.label}
-            </a>
-          ))}
-        </div>
+        {p.extras.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {p.extras.map((ex) => (
+              <a
+                key={ex.label}
+                href={ex.url}
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 hover:border-white/10"
+              >
+                <Package className="w-3 h-3" />
+                {ex.label}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -293,9 +289,19 @@ export function DownloadPageClient() {
             </div>
           </div>
           <div className="flex items-center gap-2 bg-[#060a12] rounded-xl px-4 py-3 border border-white/5 font-mono text-xs text-slate-300 mt-2">
-            <span className="truncate flex-1 text-slate-400">{SITE_CONFIG.release.checksumSha256}</span>
-            <CopyButton text={SITE_CONFIG.release.checksumSha256 ?? ""} />
+            <span className="truncate flex-1 text-slate-400">
+              {WINDOWS_CHECKSUM_COMMAND}
+            </span>
+            <CopyButton text={WINDOWS_CHECKSUM_COMMAND} />
           </div>
+          <a
+            href={WINDOWS_CHECKSUM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-mono text-[#00ffaa] hover:underline"
+          >
+            Compare against the published SHA-256 file <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
 
         {/* Footer note */}

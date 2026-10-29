@@ -27,16 +27,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stackpilot.desktop.model.DiagnosisTab
 import com.stackpilot.desktop.model.DiagnosticFinding
+import com.stackpilot.desktop.model.VerificationOutcome
 import com.stackpilot.desktop.theme.AppColors
 
 @Composable
 fun DiagnosisResultView(
     finding: DiagnosticFinding?,
-    verifySummary: String?,
+    verification: VerificationOutcome?,
+    canRollback: Boolean,
     isBusy: Boolean,
     onRunAgain: () -> Unit,
     onReviewAndApplyFix: (DiagnosticFinding) -> Unit,
     onVerify: (DiagnosticFinding) -> Unit,
+    onRollback: (DiagnosticFinding) -> Unit,
+    onExportReport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Reset to Explanation tab whenever a different finding is selected.
@@ -66,26 +70,20 @@ fun DiagnosisResultView(
                 )
 
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .border(1.dp, AppColors.CardBorder, RoundedCornerShape(6.dp))
-                        .background(Color(0xFF0F172A).copy(alpha = 0.6f))
-                        .clickable(enabled = !isBusy, onClick = onRunAgain)
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = "Run Again",
-                        tint = if (isBusy) AppColors.TextMuted else AppColors.TextSecondary,
-                        modifier = Modifier.size(13.dp)
+                    HeaderAction(
+                        icon = Icons.Filled.FileDownload,
+                        label = "Report",
+                        enabled = !isBusy,
+                        onClick = onExportReport
                     )
-                    Text(
-                        text = if (isBusy) "Running..." else "Run Again",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (isBusy) AppColors.TextMuted else AppColors.TextSecondary
+                    HeaderAction(
+                        icon = Icons.Filled.Refresh,
+                        label = if (isBusy) "Running..." else "Run Again",
+                        enabled = !isBusy,
+                        onClick = onRunAgain
                     )
                 }
             }
@@ -196,6 +194,24 @@ fun DiagnosisResultView(
                             color = AppColors.TextSecondary,
                             lineHeight = 16.sp
                         )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MetaChip("confidence ${finding.confidence}%", AppColors.PrimaryBlueHover)
+                            MetaChip(finding.category, AppColors.TextSecondary)
+                            if (finding.risk.isNotBlank()) {
+                                MetaChip(
+                                    "risk ${finding.risk}",
+                                    when (finding.risk.uppercase()) {
+                                        "HIGH" -> AppColors.StatusRed
+                                        "MEDIUM" -> AppColors.StatusAmber
+                                        else -> AppColors.StatusGreen
+                                    }
+                                )
+                            }
+                            if (finding.requiresRestart) {
+                                MetaChip("needs restart", AppColors.StatusAmber)
+                            }
+                        }
                     }
                 }
 
@@ -253,6 +269,22 @@ fun DiagnosisResultView(
                                 else -> "Check the Docker Compose service name and update the application configuration to use it instead of a loopback address."
                             }
                             CodeSnippetBox(text = fixText)
+
+                            if (finding.nextSteps.isNotEmpty()) {
+                                SectionHeader(
+                                    icon = Icons.Filled.Checklist,
+                                    iconTint = AppColors.StatusAmber,
+                                    title = "Manual steps if you prefer to fix it yourself"
+                                )
+                                finding.nextSteps.forEachIndexed { index, step ->
+                                    Text(
+                                        text = "${index + 1}. $step",
+                                        fontSize = 11.sp,
+                                        color = AppColors.TextSecondary,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -285,6 +317,8 @@ fun DiagnosisResultView(
                                                 "LOG"    -> AppColors.StatusAmber to AppColors.StatusAmberBg
                                                 "CONFIG" -> AppColors.PrimaryBlueHover to AppColors.PrimaryBlueMuted
                                                 "DOCKER" -> AppColors.StatusGreen to AppColors.StatusGreenBg
+                                                "PROBE"  -> AppColors.StatusRed to AppColors.BadgeRedBg
+                                                "DOC"    -> AppColors.PrimaryBlueHover to AppColors.PrimaryBlueMuted
                                                 else     -> AppColors.TextSecondary to AppColors.CardBorder
                                             }
                                             Box(
@@ -331,9 +365,41 @@ fun DiagnosisResultView(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (finding.patches.isEmpty()) {
+                            if (finding.patches.isEmpty() && finding.actions.isEmpty()) {
                                 CodeSnippetBox("No automated patch is available for this finding. Follow the Recommended Fix in the Explanation tab.")
                             } else {
+                                if (finding.actions.isNotEmpty()) {
+                                    Text(
+                                        text = "Container actions (run only when you approve):",
+                                        fontSize = 10.sp,
+                                        color = AppColors.TextMuted
+                                    )
+                                    finding.actions.forEach { action ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .border(1.dp, AppColors.CardBorder, RoundedCornerShape(6.dp))
+                                                .background(Color(0xFF0B101D))
+                                                .padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Refresh,
+                                                contentDescription = null,
+                                                tint = AppColors.StatusAmber,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                text = "${action.kind} \u00B7 ${action.target}",
+                                                fontSize = 10.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = AppColors.TextSecondary
+                                            )
+                                        }
+                                    }
+                                }
                                 finding.patches.forEach { patch ->
                                     Column(
                                         modifier = Modifier
@@ -413,20 +479,90 @@ fun DiagnosisResultView(
                                         }
                                     }
                                 }
+
+                                if (finding.requiresRestart) {
+                                    Text(
+                                        text = "This change only takes effect after the affected container restarts.",
+                                        fontSize = 10.sp,
+                                        color = AppColors.StatusAmber
+                                    )
+                                }
                             }
                         }
                     }
 
                     DiagnosisTab.Verification -> {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 240.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             SectionHeader(
                                 icon = Icons.Filled.Verified,
                                 iconTint = AppColors.PrimaryBlueHover,
                                 title = "Verification Status"
                             )
-                            CodeSnippetBox(
-                                text = verifySummary ?: "Click 'Verify Issue' to run verification tests against the Docker and Spring Boot environment."
-                            )
+
+                            if (verification == null) {
+                                CodeSnippetBox(
+                                    text = "Not verified yet. StackPilot verifies automatically right after an approved fix, " +
+                                        "or you can click 'Verify Now' to re-check the current state of every rule and every published port."
+                                )
+                            } else {
+                                val statusAccent = when {
+                                    verification.resolved -> AppColors.StatusGreen
+                                    verification.pending -> AppColors.StatusAmber
+                                    verification.status.equals("NO_FIX", ignoreCase = true) -> AppColors.StatusGray
+                                    else -> AppColors.StatusRed
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .border(1.dp, statusAccent.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                                            .background(statusAccent.copy(alpha = 0.14f))
+                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = verification.status.replace('_', ' '),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = statusAccent
+                                        )
+                                    }
+                                    if (verification.checkedAt.isNotBlank()) {
+                                        Text(
+                                            text = "checked " + prettyTime(verification.checkedAt),
+                                            fontSize = 9.sp,
+                                            color = AppColors.TextMuted
+                                        )
+                                    }
+                                }
+
+                                CodeSnippetBox(text = verification.summary)
+
+                                if (verification.runtimeChecks.isNotEmpty()) {
+                                    SectionHeader(
+                                        icon = Icons.Filled.CheckCircle,
+                                        iconTint = AppColors.StatusGreen,
+                                        title = "Runtime checks"
+                                    )
+                                    verification.runtimeChecks.forEach { check ->
+                                        Text(
+                                            text = "\u2022 " + check,
+                                            fontSize = 10.5.sp,
+                                            color = AppColors.TextSecondary,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+
                             OutlinedButton(
                                 onClick = { onVerify(finding) },
                                 enabled = !isBusy,
@@ -434,7 +570,7 @@ fun DiagnosisResultView(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "Verify Issue",
+                                    text = "Verify Now",
                                     fontSize = 12.sp,
                                     color = AppColors.PrimaryBlueHover
                                 )
@@ -445,8 +581,8 @@ fun DiagnosisResultView(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Big Call to action: Review and Apply Fix
-                if (finding.patches.isNotEmpty()) {
+                // Big Call to action: Review and Apply Fix (developer approval gate)
+                if (finding.fixable) {
                     Button(
                         onClick = { onReviewAndApplyFix(finding) },
                         enabled = !isBusy,
@@ -473,6 +609,42 @@ fun DiagnosisResultView(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "No automated patch for this finding. Follow the manual steps in the Explanation tab.",
+                        fontSize = 10.sp,
+                        color = AppColors.TextMuted,
+                        lineHeight = 14.sp
+                    )
+                }
+
+                // Roll back a previously applied fix from the on-disk backups
+                if (canRollback) {
+                    OutlinedButton(
+                        onClick = { onRollback(finding) },
+                        enabled = !isBusy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(38.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Undo,
+                                contentDescription = null,
+                                tint = AppColors.StatusAmber,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Roll back the applied fix",
+                                fontSize = 12.sp,
+                                color = AppColors.StatusAmber
                             )
                         }
                     }
@@ -529,6 +701,58 @@ private fun SectionHeader(
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = AppColors.TextPrimary
+        )
+    }
+}
+
+@Composable
+private fun HeaderAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val tint = if (enabled) AppColors.TextSecondary else AppColors.TextMuted
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, AppColors.CardBorder, RoundedCornerShape(6.dp))
+            .background(Color(0xFF0F172A).copy(alpha = 0.6f))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = tint
+        )
+    }
+}
+
+/** Small metadata pill used in the finding banner. */
+@Composable
+private fun MetaChip(label: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(color.copy(alpha = 0.14f))
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = color
         )
     }
 }

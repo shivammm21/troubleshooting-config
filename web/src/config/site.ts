@@ -16,6 +16,19 @@ export interface ReleaseConfig {
   }[];
 }
 
+// Stable alias published by .github/workflows/release.yml. GitHub redirects it to
+// the StackPilot-Setup.exe attached to the newest published release, so the
+// website never has to change when a new version ships.
+export const WINDOWS_SETUP_URL =
+  "https://github.com/shivammm21/troubleshooting-config/releases/latest/download/StackPilot-Setup.exe";
+
+// Checksum file published next to the installer.
+export const WINDOWS_CHECKSUM_URL = `${WINDOWS_SETUP_URL}.sha256`;
+
+// Terminal equivalents of the Windows download button.
+export const WINDOWS_CURL_COMMAND = `curl.exe -L -o StackPilot-Setup.exe "${WINDOWS_SETUP_URL}"`;
+export const WINDOWS_POWERSHELL_COMMAND = `Invoke-WebRequest -Uri "${WINDOWS_SETUP_URL}" -OutFile StackPilot-Setup.exe`;
+
 export const SITE_CONFIG = {
   name: "Stack Pilot",
   tagline: "Find the Fault. Fix the Stack.",
@@ -28,12 +41,11 @@ export const SITE_CONFIG = {
     contributingUrl: "https://github.com/shivammm21/troubleshooting-config/blob/main/CONTRIBUTING.md",
   },
   release: {
-    version: "v0.4.2-beta",
+    version: "v1.0.0",
     releaseDate: "October 2026",
     channel: "Public Beta",
     isAvailable: true,
     notesUrl: "https://github.com/shivammm21/troubleshooting-config/releases",
-    checksumSha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     platforms: [
       {
         os: "linux",
@@ -41,8 +53,8 @@ export const SITE_CONFIG = {
         arch: "x86_64",
         format: ".tar.gz / AppImage",
         size: "42.8 MB",
-        downloadUrl: "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-linux-x64.tar.gz",
-        isReady: true,
+        downloadUrl: "https://github.com/shivammm21/troubleshooting-config/releases",
+        isReady: false,
       },
       {
         os: "macos",
@@ -50,23 +62,23 @@ export const SITE_CONFIG = {
         arch: "Universal (arm64 / x86_64)",
         format: ".dmg / binary",
         size: "48.1 MB",
-        downloadUrl: "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-darwin-universal.dmg",
-        isReady: true,
+        downloadUrl: "https://github.com/shivammm21/troubleshooting-config/releases",
+        isReady: false,
       },
       {
         os: "windows",
         label: "Windows 11 / 10",
         arch: "x86_64",
-        format: ".msi / .zip",
-        size: "44.6 MB",
-        downloadUrl: "https://github.com/shivammm21/troubleshooting-config/releases/download/v0.4.2-beta/stackpilot-win-x64.zip",
+        format: ".exe installer",
+        size: "173.5 MB",
+        downloadUrl: WINDOWS_SETUP_URL,
         isReady: true,
       },
     ],
   } as ReleaseConfig,
+  // Terminal one-liners that fetch the same installer as the Windows button.
   quickInstall: {
-    curl: "curl -fsSL https://raw.githubusercontent.com/shivammm21/troubleshooting-config/main/install.sh | bash",
-    brew: "brew tap stackpilot/tap && brew install stackpilot",
-    powershell: "irm https://raw.githubusercontent.com/shivammm21/troubleshooting-config/main/install.ps1 | iex",
+    curl: WINDOWS_CURL_COMMAND,
+    powershell: WINDOWS_POWERSHELL_COMMAND,
   },
 };

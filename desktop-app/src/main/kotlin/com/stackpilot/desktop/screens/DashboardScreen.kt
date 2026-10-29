@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fasterxml.jackson.databind.JsonNode
+import com.stackpilot.desktop.ApiParsers
 import com.stackpilot.desktop.BackendClient
 import com.stackpilot.desktop.components.*
 import com.stackpilot.desktop.model.*
@@ -39,7 +40,10 @@ import javax.swing.JFileChooser
 fun DashboardScreen(
     backendPort: Int,
     backendUrl: String,
-    sessionToken: String
+    sessionToken: String,
+    userName: String,
+    userEmail: String,
+    onLogout: () -> Unit
 ) {
     val client = remember(backendUrl, sessionToken) { BackendClient(backendUrl, sessionToken) }
     val scope = rememberCoroutineScope()
@@ -47,6 +51,10 @@ fun DashboardScreen(
 
     var selectedNav by remember { mutableStateOf(NavItem.Dashboard) }
     var busy by remember { mutableStateOf(false) }
+
+    // Profile panel opened from the top-bar account menu
+    var showProfile by remember { mutableStateOf(false) }
+    var confirmLogout by remember { mutableStateOf(false) }
 
     // Project state
     var projectPath by remember {
@@ -71,8 +79,23 @@ fun DashboardScreen(
     var diagnosticRunId by remember { mutableStateOf<String?>(null) }
     var findings by remember { mutableStateOf<List<DiagnosticFinding>>(emptyList()) }
     var selectedFinding by remember { mutableStateOf<DiagnosticFinding?>(null) }
-    var verifySummaryMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var verificationsByFinding by remember { mutableStateOf<Map<String, VerificationOutcome>>(emptyMap()) }
+    var rolledBackFindings by remember { mutableStateOf<Set<String>>(emptySet()) }
     var recentDiagnostics by remember { mutableStateOf<List<RecentDiagnosticItem>>(emptyList()) }
+
+    // Feature 5 – finding awaiting explicit developer approval (dialog gate)
+    var pendingRepair by remember { mutableStateOf<DiagnosticFinding?>(null) }
+
+    // Feature 1 – infrastructure health: docker state + container health + TCP probes
+    var health by remember { mutableStateOf(InfraHealth()) }
+
+    // Feature 2 – grouped failure signatures for the selected container
+    var logAnalysis by remember { mutableStateOf<LogAnalysis?>(null) }
+    var logAnalysisBusy by remember { mutableStateOf(false) }
+
+    // Persisted history (diagnostic runs + verification verdicts)
+    var runHistory by remember { mutableStateOf<List<RunHistoryItem>>(emptyList()) }
+    var verificationHistory by remember { mutableStateOf<List<VerificationRecordItem>>(emptyList()) }
 
     // Helper for IO coroutines
     fun runIo(block: suspend () -> Unit) {
@@ -88,69 +111,124 @@ fun DashboardScreen(
         }
     }
 
+    // Feature 2: refresh the grouped failure signatures for one container
+    fun loadLogAnalysis(containerId: String?) {
+        val id = containerId ?: return
+        scope.launch {
+            logAnalysisBusy = true
+            try {
+                val node = withContext(Dispatchers.IO) { client.logAnalysis(id, 400) }
+                logAnalysis = ApiParsers.logAnalysis(node)
+            } catch (e: Exception) {
+                logAnalysis = null
+                snackbarHostState.showSnackbar("Log analysis failed: ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                logAnalysisBusy = false
+            }
+        }
+    }
+
     // Select container and stream its logs immediately
     fun selectContainer(container: ContainerItem) {
         selectedContainerId = container.id
         selectedContainerName = container.name
         logEntries = emptyList() // Clear previous container's logs immediately
+        logAnalysis = null
         scope.launch {
             try {
                 val raw = withContext(Dispatchers.IO) { client.logs(container.id, 500) }
                 if (raw.isNotBlank()) {
-                    logEntries = raw.lines().filter { it.isNotBlank() }.map { parseLogLine(it) }
+                    logEntries = parseLogEntries(raw)
                 }
             } catch (e: Exception) {
                 logEntries = listOf(LogEntry(message = "Error fetching logs: ${e.message}", raw = ""))
             }
         }
+        loadLogAnalysis(container.id)
     }
 
-    // Refresh Docker status and containers
-    fun refreshDocker() = runIo {
-        val status = client.dockerStatus()
-        dockerConnected = status.path("connected").asBoolean(false)
-        dockerEngineName = status.path("engineName").asText("Docker Engine")
-        dockerError = status.path("error").takeIf { !it.isMissingNode && !it.isNull }?.asText()
+    // Feature 1: one call returns Docker state, container health and TCP probe results
+    suspend fun loadHealth() {
+        val parsed = ApiParsers.health(client.infraHealth())
+        health = parsed
+        dockerConnected = parsed.dockerConnected
+        dockerEngineName = parsed.engineName
+        dockerError = parsed.dockerError
+        containers = parsed.containers
 
-        val listNode = client.containers()
-        if (listNode.isArray && listNode.size() > 0) {
-            val loaded = listNode.map { node ->
-                val id = node.path("id").asText()
-                val name = node.path("name").asText().removePrefix("/")
-                val image = node.path("image").asText()
-                val state = node.path("state").asText("running")
-                val statusText = node.path("status").asText("Running")
-                val portsList = node.path("ports").map { it.asText() }.filter { it.isNotBlank() }.joinToString(", ")
-
-                val isUnhealthy = statusText.contains("unhealthy", ignoreCase = true)
-                val isHealthy = statusText.contains("healthy", ignoreCase = true) || (!isUnhealthy && state.contains("running", ignoreCase = true))
-
-                ContainerItem(
-                    id = id,
-                    name = name,
-                    image = image,
-                    state = state,
-                    status = statusText,
-                    health = if (isUnhealthy) "Unhealthy" else if (isHealthy) "Healthy" else "-",
-                    ports = portsList.ifBlank { "-" }
-                )
-            }
-            containers = loaded
-            val current = loaded.find { it.id == selectedContainerId || it.name == selectedContainerName }
-            if (current != null) {
-                selectContainer(current)
-            } else if (loaded.isNotEmpty()) {
-                selectContainer(loaded.first())
-            }
+        if (parsed.containers.isNotEmpty()) {
+            val current = parsed.containers.find { it.id == selectedContainerId || it.name == selectedContainerName }
+            selectContainer(current ?: parsed.containers.first())
         } else {
-            containers = emptyList()
             selectedContainerId = null
             selectedContainerName = "No container running"
             logEntries = emptyList()
+            logAnalysis = null
         }
     }
 
-    // Attach project and index configuration
+    suspend fun loadHistory() {
+        runHistory = ApiParsers.runHistory(client.history(30))
+        verificationHistory = ApiParsers.verifications(client.verifications(30))
+    }
+
+    // Refresh Docker status, container health and probes
+    fun refreshDocker() = runIo { loadHealth() }
+
+    // Keep the dashboard "recent diagnostics" list in sync with a verification verdict
+    fun updateRecentStatus(finding: DiagnosticFinding, verdict: VerificationOutcome) {
+        val label = when {
+            verdict.resolved -> "Resolved"
+            verdict.pending -> "Pending restart"
+            verdict.status.equals("NO_FIX", ignoreCase = true) -> "Manual fix"
+            else -> "Unresolved"
+        }
+        val color = when {
+            verdict.resolved -> "green"
+            verdict.pending -> "yellow"
+            else -> "red"
+        }
+        recentDiagnostics = recentDiagnostics.map { item ->
+            if (item.issue == finding.title) item.copy(status = label, statusColor = color) else item
+        }
+    }
+
+    fun verdictHeadline(verdict: VerificationOutcome): String = when {
+        verdict.resolved -> "Verified as resolved"
+        verdict.pending -> "Config fixed - restart the container to load it"
+        else -> "Issue is still present"
+    }
+
+    // Shared bookkeeping after any diagnostic run (fresh or reopened from history)
+    suspend fun applyRun(runNode: JsonNode, announce: Boolean): Int {
+        diagnosticRunId = runNode.path("id").asText()
+        val parsedFindings = ApiParsers.findings(runNode.path("findings"))
+        findings = parsedFindings
+        selectedFinding = parsedFindings.firstOrNull()
+        verificationsByFinding = emptyMap()
+        rolledBackFindings = emptySet()
+
+        val nowTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        val newRecent = parsedFindings.map { f ->
+            RecentDiagnosticItem(
+                time        = nowTime,
+                issue       = f.title,
+                service     = findingServiceName(f.ruleId),
+                status      = "Detected",
+                statusColor = findingStatusColor(f.severity)
+            )
+        }
+        recentDiagnostics =
+            if (announce) (newRecent + recentDiagnostics).distinctBy { it.issue }.take(8) else newRecent
+
+        loadHistory()
+        if (announce) {
+            snackbarHostState.showSnackbar("Diagnostics complete: ${parsedFindings.size} issue(s) detected")
+        }
+        return parsedFindings.size
+    }
+
+    // Attach project and index configuration, then diagnose it immediately
     fun attachCurrentProject(path: String) = runIo {
         val snapshot = client.attachProject(path)
         projectId = snapshot.path("id").asText()
@@ -159,89 +237,126 @@ fun DashboardScreen(
         projectFiles = snapshot.path("files").toList()
 
         // Automatically run diagnostics on the newly attached project
-        val run = client.runDiagnostics(projectId)
-        diagnosticRunId = run.path("id").asText()
-        val parsedFindings = parseFindings(run.path("findings"))
-        findings = parsedFindings
-        selectedFinding = parsedFindings.firstOrNull()
-        verifySummaryMap = emptyMap()
-
-        // Add to recent diagnostics
-        val nowTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        val newRecent = parsedFindings.map { f ->
-            RecentDiagnosticItem(
-                time        = nowTime,
-                issue       = f.title,
-                service     = findingServiceName(f.ruleId),
-                status      = "Detected",
-                statusColor = findingStatusColor(f.severity)
-            )
-        }
-        recentDiagnostics = newRecent
+        applyRun(client.runDiagnostics(projectId), announce = false)
     }
 
     // Run diagnostics explicitly
     fun runDiagnostics() = runIo {
-        val run = client.runDiagnostics(projectId)
-        diagnosticRunId = run.path("id").asText()
-        val parsedFindings = parseFindings(run.path("findings"))
-        findings = parsedFindings
-        selectedFinding = parsedFindings.firstOrNull()
-        verifySummaryMap = emptyMap()
-
-        val nowTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        val newRecent = parsedFindings.map { f ->
-            RecentDiagnosticItem(
-                time        = nowTime,
-                issue       = f.title,
-                service     = findingServiceName(f.ruleId),
-                status      = "Detected",
-                statusColor = findingStatusColor(f.severity)
-            )
-        }
-        if (newRecent.isNotEmpty()) {
-            recentDiagnostics = newRecent + recentDiagnostics.take(5)
-        }
-        snackbarHostState.showSnackbar("Diagnostics complete: ${parsedFindings.size} issue(s) detected")
+        applyRun(client.runDiagnostics(projectId), announce = true)
     }
 
-    // Approve and apply real repair
-    fun applyRepair(finding: DiagnosticFinding) = runIo {
-        val runId = diagnosticRunId ?: return@runIo
-        val result = client.approveRepair(runId, finding.id)
-        val msg = result.path("message").asText("Repair applied successfully")
-        snackbarHostState.showSnackbar(msg)
-
-        // Automatically verify after applying
-        val verifyResult = client.verify(runId, finding.id)
-        val resolved = verifyResult.path("resolved").asBoolean(false)
-        val summary = verifyResult.path("summary").asText()
-        verifySummaryMap = verifySummaryMap + (finding.id to summary)
-
-        recentDiagnostics = recentDiagnostics.map { item ->
-            if (item.issue == finding.title) {
-                item.copy(
-                    status = if (resolved) "Resolved" else "Investigating",
-                    statusColor = if (resolved) "green" else "yellow"
-                )
-            } else item
+    // Feature 5: the developer confirmed this exact patch in the approval dialog
+    fun confirmRepair(finding: DiagnosticFinding, restart: Boolean) = runIo {
+        pendingRepair = null
+        val runId = diagnosticRunId
+        if (runId == null) {
+            snackbarHostState.showSnackbar("Run diagnostics before applying a fix.")
+            return@runIo
         }
+
+        val outcome = ApiParsers.repairOutcome(client.approveRepair(runId, finding.id, restart))
+        snackbarHostState.showSnackbar(
+            outcome.message.ifBlank { if (outcome.applied) "Fix applied" else "Repair was not applied" }
+        )
+        if (outcome.applied) {
+            rolledBackFindings = rolledBackFindings - finding.id
+        }
+
+        // Feature 6: verify immediately after the fix
+        val verdict = ApiParsers.verification(client.verify(runId, finding.id))
+        verificationsByFinding = verificationsByFinding + (finding.id to verdict)
+        updateRecentStatus(finding, verdict)
+
+        loadHealth()
+        loadHistory()
     }
 
-    // Run verification on finding
+    // Restore the on-disk backups created by an approved fix
+    fun rollbackFinding(finding: DiagnosticFinding) = runIo {
+        val runId = diagnosticRunId
+        if (runId == null) {
+            snackbarHostState.showSnackbar("Run diagnostics before rolling a fix back.")
+            return@runIo
+        }
+        val outcome = ApiParsers.repairOutcome(client.rollbackRepair(runId, finding.id))
+        rolledBackFindings = rolledBackFindings + finding.id
+        verificationsByFinding = verificationsByFinding - finding.id
+        snackbarHostState.showSnackbar(outcome.message.ifBlank { "Fix rolled back from backup" })
+        loadHealth()
+        loadHistory()
+    }
+
+    // Feature 6: manual re-verification of the selected finding
     fun verifyFinding(finding: DiagnosticFinding) = runIo {
-        val runId = diagnosticRunId ?: return@runIo
-        val verifyResult = client.verify(runId, finding.id)
-        val resolved = verifyResult.path("resolved").asBoolean(false)
-        val summary = verifyResult.path("summary").asText()
-        verifySummaryMap = verifySummaryMap + (finding.id to summary)
-        snackbarHostState.showSnackbar(if (resolved) "✓ Issue verified as resolved!" else "⚠ Issue still present.")
+        val runId = diagnosticRunId
+        if (runId == null) {
+            snackbarHostState.showSnackbar("Run diagnostics first.")
+            return@runIo
+        }
+        val verdict = ApiParsers.verification(client.verify(runId, finding.id))
+        verificationsByFinding = verificationsByFinding + (finding.id to verdict)
+        updateRecentStatus(finding, verdict)
+        loadHistory()
+        snackbarHostState.showSnackbar(verdictHeadline(verdict))
     }
 
-    // Initial setup on mount: load Docker and attach project
+    // Container lifecycle actions straight from the health panel
+    fun restartContainer(container: ContainerItem) = runIo {
+        client.restartContainer(container.id)
+        snackbarHostState.showSnackbar("Restarted ${container.name}")
+        loadHealth()
+    }
+
+    fun startContainer(container: ContainerItem) = runIo {
+        client.startContainer(container.id)
+        snackbarHostState.showSnackbar("Started ${container.name}")
+        loadHealth()
+    }
+
+    // Reopen an earlier run from the persisted history
+    fun openRun(runId: String) = runIo {
+        val count = applyRun(client.run(runId), announce = false)
+        selectedNav = NavItem.Diagnosis
+        snackbarHostState.showSnackbar("Loaded run ${runId.take(8)}: $count finding(s)")
+    }
+
+    // Save the Markdown report generated by the backend
+    fun exportReport() {
+        val runId = diagnosticRunId
+        if (runId == null) {
+            scope.launch { snackbarHostState.showSnackbar("Run diagnostics first - a report belongs to one run.") }
+            return
+        }
+        scope.launch {
+            try {
+                val markdown = withContext(Dispatchers.IO) { client.report(runId) }
+                val chooser = JFileChooser().apply {
+                    dialogTitle = "Save StackPilot diagnostic report"
+                    selectedFile = File("stackpilot-report-${runId.take(8)}.md")
+                }
+                if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                    withContext(Dispatchers.IO) { chooser.selectedFile.writeText(markdown) }
+                    snackbarHostState.showSnackbar("Report saved to ${chooser.selectedFile.name}")
+                }
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Report export failed: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    // Initial setup on mount: load Docker, persist history and attach the project
     LaunchedEffect(Unit) {
         refreshDocker()
         attachCurrentProject(projectPath)
+    }
+
+    // Lazily refresh the panels that need live data when the user opens them
+    LaunchedEffect(selectedNav) {
+        when (selectedNav) {
+            NavItem.Health -> runIo { loadHealth() }
+            NavItem.History -> runIo { loadHistory() }
+            else -> Unit
+        }
     }
 
     // Periodic live log tailing for the chosen container
@@ -251,7 +366,7 @@ fun DashboardScreen(
             try {
                 val raw = withContext(Dispatchers.IO) { client.logs(containerId, 500) }
                 if (raw.isNotBlank()) {
-                    logEntries = raw.lines().filter { it.isNotBlank() }.map { parseLogLine(it) }
+                    logEntries = parseLogEntries(raw)
                 }
             } catch (_: Exception) {
                 // If container has no logs or error, preserve current display
@@ -284,17 +399,10 @@ fun DashboardScreen(
                 TopBar(
                     projectName = projectName,
                     projectPath = projectPath,
-                    onChangeProject = {
-                        val chooser = JFileChooser().apply {
-                            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                            dialogTitle = "Select Project / Lab Folder to Index"
-                            selectedFile = File(projectPath)
-                        }
-                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            val selected = chooser.selectedFile
-                            attachCurrentProject(selected.absolutePath)
-                        }
-                    }
+                    userName = userName,
+                    userEmail = userEmail,
+                    onOpenProfile = { showProfile = true },
+                    onLogout = { confirmLogout = true }
                 )
 
                 // Tab Routing based on Sidebar selection
@@ -305,27 +413,37 @@ fun DashboardScreen(
                             selectedContainerId = selectedContainerId,
                             selectedContainerName = selectedContainerName,
                             logEntries = logEntries,
-                            recentDiagnostics = recentDiagnostics,
-                            findings = findings,
                             selectedFinding = selectedFinding,
-                            verifySummary = selectedFinding?.id?.let { verifySummaryMap[it] },
+                            verification = selectedFinding?.id?.let { verificationsByFinding[it] },
+                            canRollback = selectedFinding?.id?.let { it in rolledBackFindings } == false &&
+                                (selectedFinding?.patches?.isNotEmpty() ?: false),
                             isBusy = busy,
                             onRefreshDocker = { refreshDocker() },
                             onSelectContainer = { container ->
                                 selectContainer(container)
                             },
                             onRunDiagnostics = { runDiagnostics() },
-                            onApplyRepair = { applyRepair(it) },
+                            onReviewFix = { pendingRepair = it },
                             onVerifyFinding = { verifyFinding(it) },
-                            onStartLab = {
-                                val labDir = File("labs/redis-hostname-mismatch")
-                                if (labDir.exists()) {
-                                    attachCurrentProject(labDir.absolutePath)
-                                    scope.launch { snackbarHostState.showSnackbar("Attached lab: redis-hostname-mismatch") }
-                                }
+                            onRollback = { rollbackFinding(it) },
+                            onExportReport = { exportReport() }
+                        )
+                    }
+
+                    NavItem.Health -> {
+                        HealthPanel(
+                            health = health,
+                            isBusy = busy,
+                            onRefresh = { refreshDocker() },
+                            onRestart = { restartContainer(it) },
+                            onStart = { startContainer(it) },
+                            onViewLogs = { container ->
+                                selectContainer(container)
+                                selectedNav = NavItem.LiveLogs
                             },
-                            onOpenDocs = {
-                                selectedNav = NavItem.Project
+                            onRunDiagnostics = {
+                                selectedNav = NavItem.Diagnosis
+                                runDiagnostics()
                             }
                         )
                     }
@@ -371,9 +489,12 @@ fun DashboardScreen(
                             containerId = selectedContainerId,
                             containers = containers,
                             logs = logEntries,
+                            logAnalysis = logAnalysis,
+                            logAnalysisBusy = logAnalysisBusy,
                             onSelectContainer = { container ->
                                 selectContainer(container)
-                            }
+                            },
+                            onRefreshAnalysis = { loadLogAnalysis(selectedContainerId) }
                         )
                     }
 
@@ -381,19 +502,33 @@ fun DashboardScreen(
                         DiagnosisFullView(
                             findings = findings,
                             selectedFinding = selectedFinding,
-                            verifySummary = selectedFinding?.id?.let { verifySummaryMap[it] },
+                            verification = selectedFinding?.id?.let { verificationsByFinding[it] },
+                            canRollback = (selectedFinding?.id?.let { it in rolledBackFindings } == false) &&
+                                (selectedFinding?.patches?.isNotEmpty() ?: false),
                             isBusy = busy,
                             onSelectFinding = { selectedFinding = it },
                             onRun = { runDiagnostics() },
-                            onApply = { applyRepair(it) },
-                            onVerify = { verifyFinding(it) }
+                            onReviewFix = { pendingRepair = it },
+                            onVerify = { verifyFinding(it) },
+                            onRollback = { rollbackFinding(it) },
+                            onExportReport = { exportReport() }
                         )
                     }
 
                     NavItem.Repairs -> {
                         RepairsFullView(
                             findings = findings,
-                            onApply = { applyRepair(it) }
+                            onApply = { pendingRepair = it }
+                        )
+                    }
+
+                    NavItem.History -> {
+                        HistoryPanel(
+                            runs = runHistory,
+                            verifications = verificationHistory,
+                            isBusy = busy,
+                            onRefresh = { runIo { loadHistory() } },
+                            onOpenRun = { openRun(it) }
                         )
                     }
 
@@ -403,7 +538,8 @@ fun DashboardScreen(
                             projectPath = projectPath,
                             containersCount = containers.size,
                             findings = findings,
-                            recentDiagnostics = recentDiagnostics
+                            recentDiagnostics = recentDiagnostics,
+                            onExportReport = { exportReport() }
                         )
                     }
 
@@ -428,6 +564,42 @@ fun DashboardScreen(
             )
         }
     }
+
+    // Feature 5: the developer approval gate. Nothing is written and no container
+    // is touched until this dialog is confirmed.
+    pendingRepair?.let { finding ->
+        ConfirmRepairDialog(
+            finding = finding,
+            onDismiss = { pendingRepair = null },
+            onConfirm = { restart -> confirmRepair(finding, restart) }
+        )
+    }
+
+    // Profile settings / logout, opened from the top-bar account menu
+    if (showProfile) {
+        ProfileDialog(
+            userName = userName,
+            userEmail = userEmail,
+            backendUrl = backendUrl,
+            onDismiss = { showProfile = false },
+            onLogout = {
+                showProfile = false
+                confirmLogout = true
+            }
+        )
+    }
+
+    if (confirmLogout) {
+        LogoutConfirmDialog(
+            userName = userName,
+            userEmail = userEmail,
+            onDismiss = { confirmLogout = false },
+            onConfirm = {
+                confirmLogout = false
+                onLogout()
+            }
+        )
+    }
 }
 
 @Composable
@@ -436,18 +608,17 @@ private fun DashboardMainView(
     selectedContainerId: String?,
     selectedContainerName: String,
     logEntries: List<LogEntry>,
-    recentDiagnostics: List<RecentDiagnosticItem>,
-    findings: List<DiagnosticFinding>,
     selectedFinding: DiagnosticFinding?,
-    verifySummary: String?,
+    verification: VerificationOutcome?,
+    canRollback: Boolean,
     isBusy: Boolean,
     onRefreshDocker: () -> Unit,
     onSelectContainer: (ContainerItem) -> Unit,
     onRunDiagnostics: () -> Unit,
-    onApplyRepair: (DiagnosticFinding) -> Unit,
+    onReviewFix: (DiagnosticFinding) -> Unit,
     onVerifyFinding: (DiagnosticFinding) -> Unit,
-    onStartLab: () -> Unit,
-    onOpenDocs: () -> Unit
+    onRollback: (DiagnosticFinding) -> Unit,
+    onExportReport: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -456,7 +627,7 @@ private fun DashboardMainView(
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Metric Stat Cards Row
+        // Container health at a glance
         StatCardsRow(
             totalContainers = containers.size,
             runningCount = containers.count { it.isRunning },
@@ -464,17 +635,16 @@ private fun DashboardMainView(
             stoppedCount = containers.count { !it.isRunning }
         )
 
-        // 2-Column Split Layout
+        // What is running on the left, what is wrong on the right
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Left Column
+            // Left Column: containers and their live output
             Column(
                 modifier = Modifier.weight(0.64f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Containers Table
                 ContainersTable(
                     containers = containers,
                     selectedContainerId = selectedContainerId,
@@ -484,7 +654,6 @@ private fun DashboardMainView(
                     onRefresh = onRefreshDocker
                 )
 
-                // Live Logs Terminal for this particular container
                 LiveLogsView(
                     containerName = selectedContainerName,
                     containerId = selectedContainerId,
@@ -492,35 +661,23 @@ private fun DashboardMainView(
                     logEntries = logEntries,
                     onSelectContainer = onSelectContainer
                 )
-
-                // Recent Diagnostics
-                RecentDiagnosticsView(
-                    items = recentDiagnostics,
-                    onViewAll = onRunDiagnostics,
-                    onSelectItem = { /* item clicked */ }
-                )
             }
 
-            // Right Column
+            // Right Column: the diagnosis for the selected finding
             Column(
                 modifier = Modifier.weight(0.36f),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Quick Actions
-                QuickActions(
-                    onRunDiagnostics = onRunDiagnostics,
-                    onStartLab = onStartLab,
-                    onOpenDocs = onOpenDocs
-                )
-
-                // Diagnosis Result with real findings
                 DiagnosisResultView(
                     finding = selectedFinding,
-                    verifySummary = verifySummary,
+                    verification = verification,
+                    canRollback = canRollback,
                     isBusy = isBusy,
                     onRunAgain = onRunDiagnostics,
-                    onReviewAndApplyFix = onApplyRepair,
-                    onVerify = onVerifyFinding
+                    onReviewAndApplyFix = onReviewFix,
+                    onVerify = onVerifyFinding,
+                    onRollback = onRollback,
+                    onExportReport = onExportReport
                 )
             }
         }
@@ -665,11 +822,6 @@ private fun ContainersFullView(
                     color = if (dockerConnected) AppColors.StatusGreen else AppColors.StatusRed
                 )
             }
-            Button(onClick = onRefresh, shape = RoundedCornerShape(8.dp)) {
-                Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Refresh Containers", fontSize = 12.sp)
-            }
         }
 
         ContainersTable(
@@ -687,7 +839,10 @@ private fun LiveLogsFullView(
     containerId: String?,
     containers: List<ContainerItem>,
     logs: List<LogEntry>,
-    onSelectContainer: (ContainerItem) -> Unit
+    logAnalysis: LogAnalysis?,
+    logAnalysisBusy: Boolean,
+    onSelectContainer: (ContainerItem) -> Unit,
+    onRefreshAnalysis: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -696,6 +851,20 @@ private fun LiveLogsFullView(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Container Log Console", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
+        Text(
+            "Live output for the selected container, grouped into failure signatures with their evidence.",
+            fontSize = 12.sp,
+            color = AppColors.TextMuted
+        )
+
+        if (logAnalysis != null) {
+            LogAnalysisPanel(
+                analysis = logAnalysis,
+                isLoading = logAnalysisBusy,
+                onRefresh = onRefreshAnalysis
+            )
+        }
+
         LiveLogsView(
             containerName = containerName,
             containerId = containerId,
@@ -711,12 +880,15 @@ private fun LiveLogsFullView(
 private fun DiagnosisFullView(
     findings: List<DiagnosticFinding>,
     selectedFinding: DiagnosticFinding?,
-    verifySummary: String?,
+    verification: VerificationOutcome?,
+    canRollback: Boolean,
     isBusy: Boolean,
     onSelectFinding: (DiagnosticFinding) -> Unit,
     onRun: () -> Unit,
-    onApply: (DiagnosticFinding) -> Unit,
-    onVerify: (DiagnosticFinding) -> Unit
+    onReviewFix: (DiagnosticFinding) -> Unit,
+    onVerify: (DiagnosticFinding) -> Unit,
+    onRollback: (DiagnosticFinding) -> Unit,
+    onExportReport: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -731,7 +903,7 @@ private fun DiagnosisFullView(
         ) {
             Column {
                 Text("Evidence-Based Diagnostics", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
-                Text("Evaluated against container logs, Docker Compose topologies, and Spring Boot bindings.", fontSize = 12.sp, color = AppColors.TextMuted)
+                Text("Every finding cites the log lines, configuration and Docker state that produced it.", fontSize = 12.sp, color = AppColors.TextMuted)
             }
             Button(onClick = onRun, enabled = !isBusy, shape = RoundedCornerShape(8.dp)) {
                 Text("Run Diagnostics", fontSize = 12.sp)
@@ -789,11 +961,14 @@ private fun DiagnosisFullView(
             // Finding details on right
             DiagnosisResultView(
                 finding = selectedFinding,
-                verifySummary = verifySummary,
+                verification = verification,
+                canRollback = canRollback,
                 isBusy = isBusy,
                 onRunAgain = onRun,
-                onReviewAndApplyFix = onApply,
+                onReviewAndApplyFix = onReviewFix,
                 onVerify = onVerify,
+                onRollback = onRollback,
+                onExportReport = onExportReport,
                 modifier = Modifier.weight(0.6f).fillMaxHeight()
             )
         }
@@ -812,9 +987,13 @@ private fun RepairsFullView(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Automated Repairs & Code Patches", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
-        Text("Review unified diffs before writing changes to disk.", fontSize = 12.sp, color = AppColors.TextSecondary)
+        Text(
+            "Review the exact diff - or the container action - before anything is written. Nothing is applied until you confirm.",
+            fontSize = 12.sp,
+            color = AppColors.TextSecondary
+        )
 
-        val repairable = findings.filter { it.patches.isNotEmpty() }
+        val repairable = findings.filter { it.fixable }
         if (repairable.isEmpty()) {
             Surface(
                 modifier = Modifier
@@ -839,29 +1018,39 @@ private fun RepairsFullView(
                         color = AppColors.CardBackground
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(finding.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(finding.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
+                                Text(
+                                    "risk ${finding.risk.lowercase()} · confidence ${finding.confidence}%",
+                                    fontSize = 10.sp,
+                                    color = AppColors.TextMuted
+                                )
+                            }
                             Text(finding.repairDescription ?: "", fontSize = 12.sp, color = AppColors.TextSecondary)
+                            finding.actions.forEach { action ->
+                                Text(
+                                    "action: ${action.kind} \u00B7 ${action.target}",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = AppColors.StatusAmber
+                                )
+                            }
+                            // The full before/after diff lives in the approval dialog - one line per
+                            // touched file keeps this list scannable.
                             finding.patches.forEach { patch ->
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFF090D16)),
-                                    color = Color(0xFF090D16)
-                                ) {
-                                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(patch.path, fontSize = 11.sp, color = AppColors.StatusGreen, fontFamily = FontFamily.Monospace)
-                                        Text("- ${patch.originalSnippet}", fontSize = 11.sp, color = AppColors.StatusRed, fontFamily = FontFamily.Monospace)
-                                        Text("+ ${patch.replacementSnippet}", fontSize = 11.sp, color = AppColors.StatusGreen, fontFamily = FontFamily.Monospace)
-                                    }
-                                }
+                                Text(
+                                    "${patch.mode} \u00B7 ${patch.path}",
+                                    fontSize = 11.sp,
+                                    color = AppColors.PrimaryBlueHover,
+                                    fontFamily = FontFamily.Monospace
+                                )
                             }
                             Button(
                                 onClick = { onApply(finding) },
                                 modifier = Modifier.align(Alignment.End),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
-                                Text("Apply Patch", fontSize = 12.sp)
+                                Text("Review fix", fontSize = 12.sp)
                             }
                         }
                     }
@@ -877,7 +1066,8 @@ private fun ReportsFullView(
     projectPath: String,
     containersCount: Int,
     findings: List<DiagnosticFinding>,
-    recentDiagnostics: List<RecentDiagnosticItem>
+    recentDiagnostics: List<RecentDiagnosticItem>,
+    onExportReport: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -886,7 +1076,24 @@ private fun ReportsFullView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Diagnostics & Environment Report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Diagnostics & Environment Report", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
+            Button(onClick = onExportReport, shape = RoundedCornerShape(8.dp)) {
+                Icon(Icons.Filled.FileDownload, null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Save Markdown report", fontSize = 12.sp)
+            }
+        }
+
+        Text(
+            "The report contains the infrastructure verdict, every root cause with its evidence, the suggested patches and the post-fix verification table.",
+            fontSize = 12.sp,
+            color = AppColors.TextMuted
+        )
 
         Surface(
             modifier = Modifier
@@ -905,7 +1112,6 @@ private fun ReportsFullView(
 
         RecentDiagnosticsView(
             items = recentDiagnostics,
-            onViewAll = {},
             onSelectItem = {}
         )
     }
@@ -983,57 +1189,7 @@ private fun findingStatusColor(severity: String): String = when (severity.upperc
     else            -> "yellow"
 }
 
-private fun parseFindings(nodes: JsonNode): List<DiagnosticFinding> {
-    if (!nodes.isArray) return emptyList()
-    return nodes.mapNotNull { f ->
-        // Guard: skip any finding that has no id — an empty id would break the repair API call.
-        val id = f.path("id").asText("").ifBlank { return@mapNotNull null }
-
-        val evidenceList = if (f.path("evidence").isArray) {
-            f.path("evidence").map { ev ->
-                EvidenceItem(
-                    source   = ev.path("source").asText("UNKNOWN"),
-                    location = ev.path("location").asText("unknown"),
-                    excerpt  = ev.path("excerpt").asText("")
-                )
-            }
-        } else emptyList()
-
-        val repair = f.path("repair")
-        val patchesList = if (!repair.isNull && !repair.isMissingNode && repair.path("patches").isArray) {
-            repair.path("patches").map { p ->
-                FilePatchItem(
-                    path               = p.path("path").asText(),
-                    originalSnippet    = p.path("originalSnippet").asText(),
-                    replacementSnippet = p.path("replacementSnippet").asText()
-                )
-            }
-        } else emptyList()
-
-        val repairDesc = if (!repair.isNull && !repair.isMissingNode) {
-            repair.path("description").takeIf { !it.isMissingNode && !it.isNull }?.asText()
-        } else null
-
-        // Use the actual severity from the backend; do NOT default to HIGH — that would
-        // mis-classify WARN findings (e.g. ContainerUnhealthyRule) as critical.
-        val severity = f.path("severity").asText("WARN").uppercase()
-
-        DiagnosticFinding(
-            id                = id,
-            ruleId            = f.path("ruleId").asText("unknown-rule"),
-            title             = f.path("title").asText("Unknown issue").ifBlank { "Unknown issue" },
-            severity          = severity,
-            summary           = f.path("summary").asText("No details available.").ifBlank { "No details available." },
-            evidence          = evidenceList,
-            repairDescription = repairDesc,
-            patches           = patchesList
-        )
-    }
-}
-
 private fun parseLogLine(raw: String): LogEntry {
-    // Strip residual binary header bytes that may survive sanitisation
-    // (e.g. if the Docker transport delivers them inside the payload string).
     val cleaned = raw.trimStart { it.code < 0x20 && it != '\t' && it != '\r' && it != '\n' }
         .trimEnd()
 
@@ -1110,10 +1266,29 @@ private fun parseLogLine(raw: String): LogEntry {
         timestamp = timestamp,
         level = detectedLevel,
         logger = "",
-        message = remaining.ifBlank { raw },
+        message = remaining,
         raw = raw
     )
 }
+
+/**
+ * Turns the raw Docker log blob into the lines the console renders.
+ *
+ * Docker prefixes every line with its own timestamp when logs are tailed with
+ * timestamps, and emits lines that hold nothing but that timestamp. Those carry
+ * no information, so they are dropped here instead of being shown twice (once in
+ * the timestamp column and once as the message).
+ */
+private fun parseLogEntries(raw: String): List<LogEntry> =
+    raw.lines()
+        .filter { it.isNotBlank() }
+        .map { parseLogLine(it) }
+        .filter { it.message.isNotBlank() && !TimestampOnlyLine.matches(it.message) }
+
+/** A line that is nothing but an RFC3339 timestamp - Docker's empty-chunk marker. */
+private val TimestampOnlyLine = Regex(
+    """^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$"""
+)
 
 /** Converts a log-level string to [LogLevel]. */
 private fun String.toLogLevel(): LogLevel? = when (this.uppercase()) {

@@ -23,6 +23,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -32,10 +35,12 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stackpilot.desktop.auth.AuthClient
+import com.stackpilot.desktop.auth.AuthConfig
 import com.stackpilot.desktop.auth.AuthException
 import com.stackpilot.desktop.auth.AuthResult
 import com.stackpilot.desktop.auth.AuthScreen
-import com.stackpilot.desktop.components.LogoImageBlack
+import com.stackpilot.desktop.components.BrandMark
+import com.stackpilot.desktop.components.loadLogoBytes
 import com.stackpilot.desktop.theme.AppColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,6 +64,14 @@ private val BtnBorder     = Color(0xFF3B82F6)
 private val PanelBg       = Color(0xFF050505)
 private val OrangeAccent  = Color(0xFFFC7819)
 private val PanelTextMuted = Color(0xD9FFFFFF)
+
+/** What the tool actually does — shown beside the "Think fast" headline. */
+private val PanelFeatures = listOf(
+    "Live health for every container, service and published port",
+    "Log analysis that groups failures into ranked signatures",
+    "Root causes backed by config, log, Docker and documentation evidence",
+    "Fixes you approve first — backed up, rollback-able and verified"
+)
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
@@ -125,13 +138,13 @@ fun AuthScreen(
                                             val r = withContext(Dispatchers.IO) { client.login(email, pw) }
                                             onAuthenticated(r)
                                         } catch (e: AuthException) { errorMessage = e.message
-                                        } catch (_: Exception)     { errorMessage = "Cannot reach http://localhost:3000" }
+                                        } catch (_: Exception)     { errorMessage = "Cannot reach ${AuthConfig.baseUrl}" }
                                         finally { busy = false }
                                     }
                                 },
                                 onGoogle = {
                                     errorMessage = null; busy = true; googleWaiting = true
-                                    openGoogleSignIn(scope,
+                                    openGoogleSignIn(scope, intent = "signin",
                                         onResult = { r -> googleWaiting = false; busy = false; onAuthenticated(r) },
                                         onError  = { m -> googleWaiting = false; busy = false; errorMessage = m })
                                 },
@@ -146,13 +159,13 @@ fun AuthScreen(
                                             withContext(Dispatchers.IO) { client.signup(name, email, pw) }
                                             pendingEmail = email; currentScreen = AuthScreen.VerifyOtp
                                         } catch (e: AuthException) { errorMessage = e.message
-                                        } catch (_: Exception)     { errorMessage = "Cannot reach http://localhost:3000" }
+                                        } catch (_: Exception)     { errorMessage = "Cannot reach ${AuthConfig.baseUrl}" }
                                         finally { busy = false }
                                     }
                                 },
                                 onGoogle = {
                                     errorMessage = null; busy = true; googleWaiting = true
-                                    openGoogleSignIn(scope,
+                                    openGoogleSignIn(scope, intent = "signup",
                                         onResult = { r -> googleWaiting = false; busy = false; onAuthenticated(r) },
                                         onError  = { m -> googleWaiting = false; busy = false; errorMessage = m })
                                 },
@@ -205,7 +218,7 @@ private fun LoginPanel(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         // Brand mark — white logo on dark background
-        com.stackpilot.desktop.components.LogoImage(size = 40.dp)
+        BrandHeader()
         Spacer(Modifier.height(28.dp))
 
         // Headline
@@ -228,25 +241,19 @@ private fun LoginPanel(
         Spacer(Modifier.height(40.dp))
 
         // Social buttons
-        Row(
+        SocialBtn(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            SocialBtn(
-                modifier = Modifier.weight(1f),
-                icon = { GoogleSvg() },
-                label = "Sign in with Google",
-                onClick = onGoogle,
-                enabled = !busy
-            )
-            SocialBtn(
-                modifier = Modifier.weight(1f),
-                icon = { AppleSvg() },
-                label = "Sign in with Apple",
-                onClick = { /* Apple OAuth */ },
-                enabled = !busy
-            )
-        }
+            icon = { GoogleIcon() },
+            label = "Sign in with Google",
+            onClick = onGoogle,
+            enabled = !busy
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Opens ${AuthConfig.baseUrl}/signin in your browser to continue with Google.",
+            fontSize = 12.sp,
+            color = TextPlaceholder
+        )
 
         Spacer(Modifier.height(32.dp))
 
@@ -288,6 +295,10 @@ private fun LoginPanel(
             enabled = email.isNotBlank() && password.isNotBlank(),
             onClick = { onLogin(email.trim(), password) }
         )
+
+        Spacer(Modifier.height(18.dp))
+
+        InfoLine("Diagnostics run on this machine — nothing is uploaded unless you export a report.")
 
         Spacer(Modifier.height(24.dp))
 
@@ -334,6 +345,9 @@ private fun SignupPanel(
         modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
+        BrandHeader()
+        Spacer(Modifier.height(18.dp))
+
         // Back
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -359,10 +373,13 @@ private fun SignupPanel(
         Spacer(Modifier.height(36.dp))
 
         // Social
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            SocialBtn(Modifier.weight(1f), { GoogleSvg() }, "Sign up with Google", onGoogle, !busy)
-            SocialBtn(Modifier.weight(1f), { AppleSvg() }, "Sign up with Apple", {}, !busy)
-        }
+        SocialBtn(Modifier.fillMaxWidth(), { GoogleIcon() }, "Sign up with Google", onGoogle, !busy)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Opens ${AuthConfig.baseUrl}/signup in your browser to continue with Google.",
+            fontSize = 12.sp,
+            color = TextPlaceholder
+        )
 
         Spacer(Modifier.height(28.dp))
         OrDivider()
@@ -424,6 +441,8 @@ private fun SignupPanel(
             enabled = firstName.isNotBlank() && email.isNotBlank() && password.length >= 8,
             onClick = { onSignup("$firstName $lastName".trim(), email.trim(), password) }
         )
+        Spacer(Modifier.height(18.dp))
+        InfoLine("Diagnostics run on this machine — nothing is uploaded unless you export a report.")
     }
 }
 
@@ -448,6 +467,9 @@ private fun OtpPanel(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
+        BrandHeader(modifier = Modifier.align(Alignment.Start))
+        Spacer(Modifier.height(18.dp))
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -556,32 +578,69 @@ private fun RightPanel(modifier: Modifier = Modifier) {
                 .padding(48.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Think fast,\nBuild faster",
-                fontSize = 62.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White,
-                lineHeight = 60.sp,
-                letterSpacing = (-2.5).sp
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Brand — white StackPilot mark + wordmark on the dark panel
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    BrandMark(height = 30.dp)
+                    Text(
+                        text = "StackPilot",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        letterSpacing = (-0.3).sp
+                    )
+                }
 
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
-                    .background(Color(0x18FFFFFF))
-                    .clickable { }
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                WindowsSvg(modifier = Modifier.size(20.dp))
+                Spacer(Modifier.height(30.dp))
+
                 Text(
-                    text = "Download the Windows app",
-                    fontSize = 16.sp,
+                    text = "Think fast,\nBuild faster",
+                    fontSize = 62.sp,
                     fontWeight = FontWeight.Medium,
-                    color = PanelTextMuted
+                    color = Color.White,
+                    lineHeight = 60.sp,
+                    letterSpacing = (-2.5).sp
                 )
+
+                Spacer(Modifier.height(20.dp))
+
+                Text(
+                    text = "StackPilot is a desktop cockpit for local Docker stacks. " +
+                        "It reads your containers, application logs, config and docs, " +
+                        "then tells you why the stack broke — and fixes it only with " +
+                        "your approval.",
+                    fontSize = 15.sp,
+                    color = PanelTextMuted,
+                    lineHeight = 23.sp,
+                    modifier = Modifier.widthIn(max = 470.dp)
+                )
+
+                Spacer(Modifier.height(26.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PanelFeatures.forEach { line ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xCCFFFFFF),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = line,
+                                fontSize = 13.sp,
+                                color = PanelTextMuted,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -703,6 +762,47 @@ private fun DrawScope.drawAmbientGradient(time: Float) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared components
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared brand + helper bits
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** StackPilot mark (logo-white.png) with the wordmark beside it. */
+@Composable
+private fun BrandHeader(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        BrandMark(height = 34.dp)
+        Text(
+            text = "StackPilot",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextMain,
+            letterSpacing = (-0.3).sp
+        )
+    }
+}
+
+/** Small, quiet footnote used under the primary actions. */
+@Composable
+private fun InfoLine(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Lock,
+            contentDescription = null,
+            tint = TextPlaceholder,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(text, fontSize = 12.sp, color = TextPlaceholder, lineHeight = 16.sp)
+    }
+}
 
 @Composable
 private fun SocialBtn(
@@ -1005,47 +1105,14 @@ private fun GoogleWaitingOverlay(onCancel: () -> Unit) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Google icon — loads the real Google.svg from classpath resources
+// Google icon — the real four-colour brand "G"
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun GoogleSvg() {
-    // Try to load and rasterize the bundled Google.svg using Skia's SVG renderer.
-    // Falls back to the inline 4-path version if the file is missing.
-    val bitmap = remember {
-        try {
-            val bytes = Thread.currentThread().contextClassLoader
-                ?.getResourceAsStream("drawable/Google.svg")?.readBytes()
-                ?: GoogleSvgFallback::class.java.classLoader
-                    .getResourceAsStream("drawable/Google.svg")?.readBytes()
-
-            if (bytes != null) {
-                // Render the SVG at 64×64 using Skia's SVGDOM
-                val svgDom = org.jetbrains.skia.svg.SVGDOM(org.jetbrains.skia.Data.makeFromBytes(bytes))
-                val surface = org.jetbrains.skia.Surface.makeRasterN32Premul(64, 64)
-                svgDom.setContainerSize(64f, 64f)
-                svgDom.render(surface.canvas)
-                surface.makeImageSnapshot().toComposeImageBitmap()
-            } else null
-        } catch (_: Exception) { null }
-    }
-
-    if (bitmap != null) {
-        androidx.compose.foundation.Image(
-            bitmap = bitmap,
-            contentDescription = "Google",
-            modifier = Modifier.size(18.dp)
-        )
-    } else {
-        // Inline fallback (4-colour Google G paths)
-        GoogleSvgFallback()
-    }
-}
-
-private object GoogleSvgFallback
+private fun GoogleIcon() = GoogleGlyph()
 
 @Composable
-private fun GoogleSvgFallback() {
+private fun GoogleGlyph() {
     // The SVG viewBox is "-3 0 262 262" → width=262, height=262
     // Scale to fit 18dp canvas
     Canvas(modifier = Modifier.size(18.dp)) {
@@ -1077,140 +1144,58 @@ private fun androidPath(d: String, scale: Float, offsetX: Float): Path {
     return path
 }
 
-@Composable
-private fun AppleSvg() {
-    Canvas(modifier = Modifier.size(18.dp)) {
-        val s = size.width / 24f
-        drawPath(
-            path = androidPath("M17.05 12.54c-.03-3.02 2.47-4.47 2.58-4.54-1.41-2.06-3.6-2.34-4.38-2.37-1.86-.19-3.64 1.1-4.58 1.1-.95 0-2.42-1.07-3.98-1.04-2.05.03-3.94 1.19-4.99 3.02-2.13 3.69-.54 9.16 1.53 12.15 1.01 1.46 2.22 3.1 3.81 3.04 1.53-.06 2.11-.99 3.96-.99s2.37.99 3.99.96c1.65-.03 2.69-1.49 3.69-2.96 1.16-1.69 1.64-3.33 1.66-3.41-.04-.02-3.2-1.23-3.24-4.87ZM14.03 3.66c.84-1.02 1.41-2.43 1.25-3.84-1.21.05-2.68.81-3.55 1.83-.78.9-1.46 2.34-1.28 3.72 1.35.1 2.73-.69 3.58-1.71Z", s),
-            color = TextMain   // white on dark background
-        )
-    }
-}
-
-@Composable
-private fun WindowsSvg(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val s = size.width / 24f
-        drawPath(
-            path = androidPath("M3 4.7 10.7 3.6v7.7H3V4.7Zm8.8-1.25L21 2.1v9.2h-9.2V3.45ZM3 12.7h7.7v7.7L3 19.3v-6.6Zm8.8 0H21v9.2l-9.2-1.3v-7.9Z", s),
-            color = Color.White
-        )
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// SVG path parsing — robust implementation
+// SVG path parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Parses a subset of SVG path `d` attribute into a Compose [Path].
- * Handles M, L, C, Z/z commands with absolute coordinates.
- * [scale] multiplies every coordinate so a 24×24 viewBox fits the canvas.
+ * Parses an SVG path `d` attribute into a Compose [Path] scaled by [scale].
+ *
+ * This delegates to Compose's [PathParser], which implements the full SVG path
+ * grammar. A hand-rolled tokenizer used to live here and it silently dropped the
+ * H/V shorthand (`h`, `H`, `v`, `V`) — the two brand glyphs on this screen use
+ * exactly those commands, so they rendered with whole chunks missing.
  */
 private fun androidPath(d: String, scale: Float): Path {
-    val path = Path()
-
-    // Tokenise: split on commands OR whitespace/comma between numbers
-    // Result is a flat list of strings, each either a single letter or a number.
-    val tokens = mutableListOf<String>()
-    val sb = StringBuilder()
-    for (ch in d.trim()) {
-        when {
-            ch.isLetter() -> {
-                if (sb.isNotEmpty()) { tokens.add(sb.toString()); sb.clear() }
-                tokens.add(ch.toString())
-            }
-            ch == ',' || ch == ' ' || ch == '\t' || ch == '\n' -> {
-                if (sb.isNotEmpty()) { tokens.add(sb.toString()); sb.clear() }
-            }
-            ch == '-' -> {
-                // Negative sign starts a new number token
-                if (sb.isNotEmpty()) { tokens.add(sb.toString()); sb.clear() }
-                sb.append(ch)
-            }
-            else -> sb.append(ch)
-        }
-    }
-    if (sb.isNotEmpty()) tokens.add(sb.toString())
-
-    // Parse commands
-    var i = 0
-    fun nextFloat(): Float {
-        while (i < tokens.size && tokens[i].length == 1 && tokens[i][0].isLetter()) i++
-        return if (i < tokens.size) tokens[i++].toFloatOrNull() ?: 0f else 0f
-    }
-
-    while (i < tokens.size) {
-        val cmd = tokens[i]
-        if (cmd.length != 1 || !cmd[0].isLetter()) { i++; continue }
-        i++ // consume command
-        when (cmd) {
-            "M" -> path.moveTo(nextFloat() * scale, nextFloat() * scale)
-            "m" -> path.relativeMoveTo(nextFloat() * scale, nextFloat() * scale)
-            "L" -> {
-                while (i < tokens.size && (tokens[i].toFloatOrNull() != null || tokens[i].startsWith("-"))) {
-                    path.lineTo(nextFloat() * scale, nextFloat() * scale)
-                }
-            }
-            "l" -> {
-                while (i < tokens.size && (tokens[i].toFloatOrNull() != null || tokens[i].startsWith("-"))) {
-                    path.relativeLineTo(nextFloat() * scale, nextFloat() * scale)
-                }
-            }
-            "H" -> {
-                while (i < tokens.size && (tokens[i].toFloatOrNull() != null || tokens[i].startsWith("-"))) {
-                    // Horizontal line — need current Y; approximate by using lineTo with same Y via moveTo trick
-                    // For our icon paths H is not used, but handle gracefully
-                    nextFloat() // consume X, skip (no currentY available here without tracking)
-                }
-            }
-            "C" -> {
-                while (i < tokens.size && (tokens[i].toFloatOrNull() != null || tokens[i].startsWith("-"))) {
-                    val x1 = nextFloat() * scale; val y1 = nextFloat() * scale
-                    val x2 = nextFloat() * scale; val y2 = nextFloat() * scale
-                    val x  = nextFloat() * scale; val y  = nextFloat() * scale
-                    path.cubicTo(x1, y1, x2, y2, x, y)
-                }
-            }
-            "c" -> {
-                while (i < tokens.size && (tokens[i].toFloatOrNull() != null || tokens[i].startsWith("-"))) {
-                    val x1 = nextFloat() * scale; val y1 = nextFloat() * scale
-                    val x2 = nextFloat() * scale; val y2 = nextFloat() * scale
-                    val x  = nextFloat() * scale; val y  = nextFloat() * scale
-                    path.relativeCubicTo(x1, y1, x2, y2, x, y)
-                }
-            }
-            "Z", "z" -> path.close()
-            else -> {} // skip unknown commands
-        }
+    val path = PathParser().parsePathString(d).toPath()
+    if (scale != 1f) {
+        path.transform(Matrix().apply { scale(scale, scale, 1f) })
     }
     return path
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Google OAuth local-server flow
+// Google sign-in — the flow starts on the StackPilot site, not at Google
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Port of the tiny listener that receives the finished session from the site. */
+private const val CALLBACK_PORT = 9876
+
+/**
+ * Opens the StackPilot site's Google sign-in / sign-up page in the system browser.
+ *
+ * The browser starts at [AuthConfig.baseUrl] (`http://localhost:3000/signin` or
+ * `/signup`), which shows the Google button. The site owns the Google client
+ * id/secret: it sends the browser to Google, handles the callback at
+ * [AuthConfig.redirectUri], and only then posts the finished session to the
+ * listener below - so the tool opens already signed in.
+ *
+ * The `state` value generated here travels through the page, Google and the site
+ * back to the listener, so a callback this window did not start is rejected.
+ */
 private fun openGoogleSignIn(
     scope: kotlinx.coroutines.CoroutineScope,
+    intent: String,
     onResult: (AuthResult) -> Unit,
     onError: (String) -> Unit
 ) {
-    val clientId   = "248413993224-7tilgr2bqhia4unv6juq3g4b56f0mbdo.apps.googleusercontent.com"
-    val redirectUri = "http://localhost:3000/auth/callback"
     val state = java.util.UUID.randomUUID().toString()
-
-    val authUrl = buildString {
-        append("https://accounts.google.com/o/oauth2/v2/auth?")
-        append("client_id=${enc(clientId)}&redirect_uri=${enc(redirectUri)}")
-        append("&response_type=code&scope=${enc("openid email profile")}")
-        append("&state=$state&access_type=offline&prompt=select_account")
-    }
+    val page = if (intent == "signup") "signup" else "signin"
+    val startUrl = "${AuthConfig.baseUrl}/$page?desktop=1&state=$state"
 
     val server = try {
         com.sun.net.httpserver.HttpServer.create(
-            java.net.InetSocketAddress("127.0.0.1", 9876), 0)
+            java.net.InetSocketAddress("127.0.0.1", CALLBACK_PORT), 0)
     } catch (e: Exception) { onError("Could not start local auth listener: ${e.message}"); return }
 
     server.createContext("/done") { exchange ->
@@ -1218,30 +1203,131 @@ private fun openGoogleSignIn(
             val kv = it.split("=", limit = 2)
             kv.getOrElse(0) { "" } to java.net.URLDecoder.decode(kv.getOrElse(1) { "" }, "UTF-8")
         }
-        val html = "<html><head><script>window.close()</script></head><body style='background:#070b12;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;margin:0'><div style='text-align:center'><h2 style='color:#3b82f6'>✓ Signed in — close this tab</h2></div></body></html>".toByteArray()
+        val html = callbackPage(ok = !params["token"].isNullOrBlank()).toByteArray(Charsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        exchange.responseHeaders.add("Cache-Control", "no-store")
         exchange.sendResponseHeaders(200, html.size.toLong())
         exchange.responseBody.use { it.write(html) }
 
-        val token = params["token"]
+        val token    = params["token"]
+        val returned = params["state"].orEmpty()
         Thread {
             Thread.sleep(400)
             server.stop(0)
             scope.launch(Dispatchers.Main) {
-                if (!token.isNullOrBlank()) {
-                    onResult(AuthResult(token = token,
-                        userId = params["userId"] ?: "",
-                        name   = params["name"]   ?: "",
-                        email  = params["email"]  ?: ""))
-                } else {
-                    onError(params["error"]?.ifBlank { null } ?: "Google sign-in was cancelled.")
+                when {
+                    returned.isNotEmpty() && returned != state ->
+                        onError("That sign-in was not started by StackPilot. Please try again.")
+                    !token.isNullOrBlank() ->
+                        onResult(AuthResult(token = token,
+                            userId = params["userId"] ?: "",
+                            name   = params["name"]   ?: "",
+                            email  = params["email"]  ?: ""))
+                    else ->
+                        onError(params["error"]?.ifBlank { null } ?: "Google sign-in was cancelled.")
                 }
             }
         }.start()
     }
     server.executor = null; server.start()
 
-    try { java.awt.Desktop.getDesktop().browse(java.net.URI(authUrl)) }
-    catch (e: Exception) { server.stop(0); onError("Cannot open browser: ${e.message}") }
+    // The site has to be up, otherwise the browser only shows a dead tab and this
+    // overlay would wait forever, so check before opening anything.
+    scope.launch {
+        val reachable = withContext(Dispatchers.IO) {
+            try {
+                java.net.http.HttpClient.newBuilder()
+                    .version(java.net.http.HttpClient.Version.HTTP_1_1)
+                    .connectTimeout(java.time.Duration.ofSeconds(3))
+                    .build()
+                    .send(
+                        java.net.http.HttpRequest.newBuilder(java.net.URI.create("${AuthConfig.baseUrl}/$page"))
+                            .timeout(java.time.Duration.ofSeconds(3))
+                            .GET()
+                            .build(),
+                        java.net.http.HttpResponse.BodyHandlers.discarding()
+                    )
+                true
+            } catch (_: Exception) { false }
+        }
+
+        if (!reachable) {
+            server.stop(0)
+            onError("Cannot reach ${AuthConfig.baseUrl} - start the site (npm run dev) and try again.")
+            return@launch
+        }
+
+        try { java.awt.Desktop.getDesktop().browse(java.net.URI(startUrl)) }
+        catch (e: Exception) { server.stop(0); onError("Cannot open browser: ${e.message}") }
+    }
 }
 
-private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+/**
+ * The page the browser finishes on once the site has handed the session back.
+ *
+ * Served as UTF-8 with an explicit charset header and a `<meta charset>` tag:
+ * the original version wrote raw UTF-8 bytes with neither, so the check mark and
+ * the em dash in the copy appeared as "âœ“" and "â€"" on Windows browsers.
+ * The app logo is inlined as a data URI so the page needs no network access.
+ */
+internal fun callbackPage(ok: Boolean): String {
+    val logo = loadLogoBytes()
+        ?.let { "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(it) }
+        .orEmpty()
+    val logoTag = if (logo.isEmpty()) "" else "<img src=\"$logo\" alt=\"StackPilot\">"
+
+    val accent  = if (ok) "#22C55E" else "#F59E0B"
+    val icon    = if (ok) "<path d=\"M20 6 9 17l-5-5\"/>"
+                  else "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 8v4\"/><path d=\"M12 16h.01\"/>"
+    val title   = if (ok) "You're signed in" else "Sign-in wasn't completed"
+    val detail  = if (ok) "Returning to the StackPilot desktop app…"
+                  else "Close this tab and try again from the app."
+
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StackPilot - $title</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #070b12; color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    width: 100%; max-width: 420px; margin: 24px; padding: 40px 32px; text-align: center;
+    background: #0d131f; border: 1px solid rgba(255,255,255,0.08); border-radius: 16px;
+    box-shadow: 0 24px 80px -24px rgba(0,0,0,0.9);
+  }
+  .brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 28px; }
+  .brand img { height: 26px; width: auto; display: block; }
+  .brand span { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; color: #fff; }
+  .badge {
+    width: 64px; height: 64px; margin: 0 auto 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: ${accent}1f; border: 1px solid ${accent}40;
+  }
+  .badge svg { width: 30px; height: 30px; stroke: $accent; fill: none;
+               stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  h1 { margin: 0 0 8px; font-size: 21px; font-weight: 600; letter-spacing: -0.4px; color: #fff; }
+  p { margin: 0; font-size: 14px; line-height: 1.6; color: #94a3b8; }
+  .hint { margin-top: 22px; font-size: 12px; color: #64748b; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">$logoTag<span>StackPilot</span></div>
+    <div class="badge"><svg viewBox="0 0 24 24">$icon</svg></div>
+    <h1>$title</h1>
+    <p>$detail</p>
+    <p class="hint">You can close this tab - the desktop app is already open.</p>
+  </div>
+  <script>setTimeout(function () { try { window.close(); } catch (e) {} }, 1500);</script>
+</body>
+</html>
+""".trimIndent()
+}

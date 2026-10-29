@@ -63,6 +63,12 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // Keep test runs out of the developer's real ~/.stackpilot/state.json so the
+    // desktop history only ever shows genuine troubleshooting sessions.
+    systemProperty(
+        "stackpilot.state.dir",
+        layout.buildDirectory.dir("test-state").get().asFile.absolutePath
+    )
 }
 
 // Produce a plain jar (not a fat jar) so the desktop module can depend on it.

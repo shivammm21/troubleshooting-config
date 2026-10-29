@@ -20,6 +20,11 @@ public class ProjectController {
         this.projects = projects;
     }
 
+    @GetMapping
+    public java.util.List<ProjectModels.ProjectRef> list() {
+        return projects.list();
+    }
+
     @PostMapping
     public ProjectModels.Snapshot attach(@RequestBody ApiRequests.AttachProjectRequest request) {
         if (request == null) {
@@ -31,6 +36,12 @@ public class ProjectController {
     @GetMapping("/{id}")
     public ProjectModels.Snapshot get(@PathVariable String id) {
         return projects.get(id);
+    }
+
+    /** Compact snapshot without file bodies — used by the desktop UI. */
+    @GetMapping("/{id}/view")
+    public ProjectModels.SnapshotView view(@PathVariable String id) {
+        return projects.get(id).view();
     }
 
     @PostMapping("/{id}/index")
