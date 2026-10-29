@@ -25,7 +25,7 @@ object AuthConfig {
     val baseUrl: String = (
         System.getenv("STACKPILOT_AUTH_BASE_URL")
             ?: System.getProperty("stackpilot.auth.baseUrl")
-            ?: "http://localhost:3000"
+            ?: "https://stackpilotconfig.vercel.app"
         ).trimEnd('/')
 
     /** Exactly what Google Console needs under "Authorized redirect URIs". */
@@ -34,7 +34,7 @@ object AuthConfig {
 
 /**
  * HTTP client for the StackPilot auth API hosted at the Next.js website
- * (default: http://localhost:3000).
+ * (default: https://stackpilotconfig.vercel.app).
  *
  * All calls are synchronous (called from Dispatchers.IO coroutines).
  */

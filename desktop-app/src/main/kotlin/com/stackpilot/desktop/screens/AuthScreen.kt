@@ -1174,7 +1174,7 @@ private const val CALLBACK_PORT = 9876
 /**
  * Opens the StackPilot site's Google sign-in / sign-up page in the system browser.
  *
- * The browser starts at [AuthConfig.baseUrl] (`http://localhost:3000/signin` or
+ * The browser starts at [AuthConfig.baseUrl] (`https://stackpilotconfig.vercel.app/signin` or
  * `/signup`), which shows the Google button. The site owns the Google client
  * id/secret: it sends the browser to Google, handles the callback at
  * [AuthConfig.redirectUri], and only then posts the finished session to the

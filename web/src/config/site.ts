@@ -25,6 +25,11 @@ export const WINDOWS_SETUP_URL =
 // Checksum file published next to the installer.
 export const WINDOWS_CHECKSUM_URL = `${WINDOWS_SETUP_URL}.sha256`;
 
+// Linux Debian package published by the same release workflow.
+export const LINUX_DEB_URL =
+  "https://github.com/shivammm21/troubleshooting-config/releases/latest/download/StackPilot.deb";
+export const LINUX_DEB_CHECKSUM_URL = `${LINUX_DEB_URL}.sha256`;
+
 // Terminal equivalents of the Windows download button.
 export const WINDOWS_CURL_COMMAND = `curl.exe -L -o StackPilot-Setup.exe "${WINDOWS_SETUP_URL}"`;
 export const WINDOWS_POWERSHELL_COMMAND = `Invoke-WebRequest -Uri "${WINDOWS_SETUP_URL}" -OutFile StackPilot-Setup.exe`;
@@ -51,10 +56,10 @@ export const SITE_CONFIG = {
         os: "linux",
         label: "Linux x64",
         arch: "x86_64",
-        format: ".tar.gz / AppImage",
-        size: "42.8 MB",
-        downloadUrl: "https://github.com/shivammm21/troubleshooting-config/releases",
-        isReady: false,
+        format: ".deb package",
+        size: "≈150 MB",
+        downloadUrl: LINUX_DEB_URL,
+        isReady: true,
       },
       {
         os: "macos",

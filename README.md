@@ -57,10 +57,33 @@ Result: `dist\StackPilot-Setup-1.0.0.exe`.
 
 `-SkipBuild` reuses an existing `desktop-build\compose\binaries\main\app` image.
 
+### Linux package (.deb)
+
+jpackage cannot cross-compile, so the Debian bundle has to be built on Linux:
+
+```bash
+sudo apt-get install -y fakeroot dpkg-dev   # packaging tools jpackage shells out to
+./gradlew :desktop-app:packageDeb
+```
+
+Result: `desktop-build/compose/binaries/main/deb/stackpilot_1.0.0_amd64.deb`.
+
+```bash
+sudo apt install ./stackpilot_1.0.0_amd64.deb
+```
+
+It installs to `/opt/stackpilot`, adds a `stackpilot` launcher on `PATH` and an
+entry in the desktop menu. It ships its own JVM, so no JDK is needed on the
+target machine.
+
 ### Publishing a release (GitHub Actions)
 
-[.github/workflows/release.yml](.github/workflows/release.yml) builds the installer on
-`windows-latest` and publishes it to the GitHub release for the current app version.
+[.github/workflows/release.yml](.github/workflows/release.yml) builds both bundles and
+publishes them to the GitHub release for the current app version:
+
+- `build-windows-setup` runs on `windows-latest` and produces the `.exe`.
+- `build-linux-deb` runs on `ubuntu-latest` and produces the `.deb`.
+- `publish-release` waits for both and attaches every asset to one release.
 
 - Pushing to `main` builds and creates/refreshes the `v<version>` release (the tag is
   created automatically when it does not exist yet).
@@ -78,11 +101,21 @@ git commit -m "Release v1.0.0"
 git push origin main
 ```
 
-The release gets three assets: `StackPilot-Setup.exe` (stable name),
-`StackPilot-Setup-<version>.exe`, and `StackPilot-Setup.exe.sha256`.
+The release gets six assets:
+
+| Asset | Purpose |
+|---|---|
+| `StackPilot-Setup.exe` | Windows installer, stable name used by the website |
+| `StackPilot-Setup-<version>.exe` | Windows installer, versioned |
+| `StackPilot-Setup.exe.sha256` | Windows checksum |
+| `StackPilot.deb` | Linux Debian package, stable name used by the website |
+| `StackPilot-<version>.deb` | Linux Debian package, versioned |
+| `StackPilot.deb.sha256` | Linux checksum |
 
 The website links to
 `https://github.com/shivammm21/troubleshooting-config/releases/latest/download/StackPilot-Setup.exe`
+and
+`https://github.com/shivammm21/troubleshooting-config/releases/latest/download/StackPilot.deb`
 (see [web/src/config/site.ts](web/src/config/site.ts) and
 [web/src/components/DownloadPageClient.tsx](web/src/components/DownloadPageClient.tsx)),
 so every new release is served without touching the site.

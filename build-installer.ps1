@@ -51,6 +51,7 @@ $gradleFile = Join-Path $root 'desktop-app\build.gradle.kts'
 $setupSource = Join-Path $installerDir 'Setup.cs'
 $manifestFile = Join-Path $installerDir 'app.manifest'
 $iconFile = Join-Path $installerDir 'StackPilot.ico'
+$pngIconFile = Join-Path $installerDir 'StackPilot.png'
 
 function Write-Step {
     param([string]$Message)
@@ -74,12 +75,14 @@ function New-AppIcon {
         throw "Logo not found: $logo"
     }
 
-    if ((Test-Path $iconFile) -and ((Get-Item $iconFile).LastWriteTime -gt (Get-Item $logo).LastWriteTime)) {
-        Write-Host "Icon up to date: $iconFile"
+    if ((Test-Path $iconFile) -and (Test-Path $pngIconFile) -and
+        ((Get-Item $iconFile).LastWriteTime -gt (Get-Item $logo).LastWriteTime) -and
+        ((Get-Item $pngIconFile).LastWriteTime -gt (Get-Item $logo).LastWriteTime)) {
+        Write-Host "Icons up to date: $iconFile, $pngIconFile"
         return
     }
 
-    Write-Host "Generating $iconFile"
+    Write-Host "Generating $iconFile and $pngIconFile"
 
     Add-Type -AssemblyName System.Drawing
     $image = [System.Drawing.Image]::FromFile($logo)
@@ -137,6 +140,10 @@ function New-AppIcon {
     }
 
     Write-Host "Icon written ($((Get-Item $iconFile).Length) bytes)"
+
+    # jpackage's Linux (deb) bundler wants a PNG icon.
+    [System.IO.File]::WriteAllBytes($pngIconFile, $pngBytes)
+    Write-Host "Linux icon written: $pngIconFile ($((Get-Item $pngIconFile).Length) bytes)"
 }
 
 # ─── 2. App image ───────────────────────────────────────────────────────────

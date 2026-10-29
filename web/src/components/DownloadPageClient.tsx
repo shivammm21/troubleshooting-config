@@ -13,7 +13,7 @@ import {
   Package,
   ChevronRight,
 } from "lucide-react";
-import { SITE_CONFIG, WINDOWS_SETUP_URL, WINDOWS_CHECKSUM_URL } from "@/config/site";
+import { SITE_CONFIG, WINDOWS_SETUP_URL, WINDOWS_CHECKSUM_URL, LINUX_DEB_URL, LINUX_DEB_CHECKSUM_URL } from "@/config/site";
 
 // ─── Copy Button ──────────────────────────────────────────────────────────────
 
@@ -94,11 +94,13 @@ const platforms = [
     accentColor: "#FCC624",
     requirement: "Linux x86_64 · Docker Engine 24+ · systemd",
     arch: "x86_64",
-    format: ".tar.gz / AppImage",
-    size: "42.8 MB",
-    isReady: false,
-    downloadUrl: SITE_CONFIG.release.notesUrl,
-    extras: [],
+    format: ".deb package",
+    size: "≈150 MB",
+    isReady: true,
+    downloadUrl: LINUX_DEB_URL,
+    extras: [
+      { label: "SHA-256 checksum", url: LINUX_DEB_CHECKSUM_URL },
+    ],
   },
 ];
 

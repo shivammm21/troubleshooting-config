@@ -1,0 +1,4 @@
+# The POSIX Gradle wrapper must keep LF endings so `./gradlew` works on
+# Linux/macOS even when the repository is checked out on Windows.
+gradlew text eol=lf
+*.sh text eol=lf

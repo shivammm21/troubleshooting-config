@@ -91,6 +91,18 @@ compose.desktop {
                 perUserInstall = false
                 upgradeUuid = "f3b6a2e4-1c9d-4e7a-b234-5d8f0e1a7c3b"
             }
+
+            linux {
+                // A Debian package name must be lowercase; jpackage rejects the
+                // mixed-case "StackPilot". The display name stays StackPilot.
+                packageName = "stackpilot"
+                iconFile.set(rootProject.layout.projectDirectory.file("installer/StackPilot.png"))
+                // Required by jpackage for .deb bundles.
+                debMaintainer = "shivammm21@users.noreply.github.com"
+                appCategory = "Development"
+                menuGroup = "Development"
+                shortcut = true
+            }
         }
 
         // Bump the JVM heap for the combined desktop+backend process.
